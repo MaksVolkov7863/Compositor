@@ -3,10 +3,14 @@
   "version": "1.0.0",
   "description": "Compositor for Windows - The lightweight, focused Photoshop alternative",
   "main": "src/main.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MaksVolkov7863/Compositor.git"
+  },
   "scripts": {
     "start": "electron src/main.js",
     "pack": "electron-builder --dir",
-    "dist": "electron-builder --win --x64"
+    "dist": "electron-builder --win --x64 --publish never"
   },
   "keywords": [
     "compositor",
