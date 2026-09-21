@@ -1,0 +1,61 @@
+{
+  "name": "compositor-windows",
+  "version": "1.0.0",
+  "description": "Compositor for Windows - The lightweight, focused Photoshop alternative",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron src/main.js",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win --x64"
+  },
+  "keywords": [
+    "compositor",
+    "image-editor",
+    "photoshop-alternative",
+    "windows",
+    "graphics"
+  ],
+  "author": "Robbie Tilton / MaksVolkov7863",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "jszip": "^3.10.1"
+  },
+  "build": {
+    "appId": "com.compositor.windows",
+    "productName": "Compositor",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Compositor"
+    }
+  }
+}

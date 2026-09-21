@@ -1,0 +1,80 @@
+name: Build Windows Application
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build & Package Windows Application
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: windows
+        run: |
+          npm install
+
+      - name: Build Windows Executable & Installer
+        working-directory: windows
+        run: |
+          npm run dist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Windows Binaries Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Compositor-Windows-x64
+          path: |
+            windows/dist/*.exe
+            windows/dist/*.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.0.0' }}
+          name: Compositor for Windows ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.0.0' }}
+          body: |
+            ## Compositor for Windows v1.0.0
+            
+            The lightweight, focused Photoshop alternative now available for Windows 10/11!
+            
+            ### Downloads
+            - **Compositor Setup (Installer)**: Download `Compositor Setup 1.0.0.exe` below
+            - **Compositor Portable**: Download `Compositor 1.0.0.exe` below (no installation required)
+            
+            ### Features
+            - Full Photoshop-style layer stack, blend modes, masks, and clipping masks
+            - Image adjustments (Levels, Curves, Hue/Saturation, Exposure, Invert)
+            - Filters (Gaussian Blur, Motion Blur, Noise/Grain, Content-Aware Fill)
+            - Retouching & selection tools (Brush, Eraser, Healing/Clone, Marquee, Lasso, Magic Wand, Type, Shapes, Gradients)
+            - Compatibility with native `.comp` project format and PNG/JPEG/PSD import and export
+            - Standard Photoshop keyboard shortcuts throughout
+          files: |
+            windows/dist/*.exe
+            windows/dist/*.zip
+          draft: false
+          prerelease: false
+

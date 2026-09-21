@@ -59,25 +59,29 @@ Because it’s open source, you can download the Xcode project and add, remove, 
 - Photoshop-style keyboard shortcuts throughout, remappable in Edit > Keyboard Shortcuts
 - Automatic updates, signed and notarized
 
-## Requirements
+## Platforms
 
-- macOS 26.5
-- Xcode 26 or later (to build from source)
+### macOS
+- macOS 14+ / Xcode 16 or later (to build from source)
+- Open `Compositor.xcodeproj` and run the **Compositor** scheme.
+- Release DMG build script available in `scripts/release.sh`.
 
-## Building
-
-Open `Compositor.xcodeproj` and run the **Compositor** scheme.
-
-## Releasing
-
-`scripts/release.sh` builds a Release version, signs it with Developer ID, notarizes and staples it, and packages it into `dist/Compositor-<version>.dmg`.
-
-It needs, all kept outside this repository:
-
-- a **Developer ID Application** certificate in the login keychain
-- notarization credentials saved with `xcrun notarytool store-credentials "compositor-notary" …`
-- [`create-dmg`](https://github.com/create-dmg/create-dmg) (`brew install create-dmg`)
+### Windows (Compositor for Windows)
+A dedicated desktop version with full feature parity for Windows 10 and 11, located in `windows/`:
+- **Automated CI/CD Builds**: Built on GitHub Actions on every push to `main` and tagged releases (`v*`). Ready-to-run setup installers (`.exe`) and portable executables are generated and downloadable from GitHub Actions Artifacts and Releases.
+- **Local Development**:
+  ```bash
+  cd windows
+  npm install
+  npm start
+  ```
+- **Local Packaging (Windows .exe installer & portable)**:
+  ```bash
+  cd windows
+  npm run dist
+  ```
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
+

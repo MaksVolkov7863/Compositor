@@ -1,0 +1,1118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compositor</title>
+    <link rel="stylesheet" href="app.css">
+    <!-- JSZip for .comp project packaging -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+</head>
+<body>
+    <!-- Titlebar with Application Menus -->
+    <div class="titlebar">
+        <div class="titlebar-left">
+            <img src="assets/icon.png" alt="Compositor" class="app-icon">
+            <span class="app-title">Compositor</span>
+            <div class="menu-bar">
+                <div class="menu-item" data-menu="file">File
+                    <div class="dropdown-menu">
+                        <div class="dropdown-item" onclick="triggerAction('new-canvas')">New Canvas…<span class="shortcut">Ctrl+N</span></div>
+                        <div class="dropdown-item" onclick="triggerAction('open-file')">Open…<span class="shortcut">Ctrl+O</span></div>
+                        <div class="dropdown-item" onclick="triggerAction('import-image')">Import Image…</div>
+                        <div class="dropdown-divider"></div>
+                        <div class="dropdown-item" onclick="triggerAction('save-project')">Save<span class="shortcut">Ctrl+S</span></div>
+                        <div class="dropdown-item" onclick="triggerAction('save-as-project')">Save As…<span class="shortcut">Ctrl+Shift+S</span></div>
+                        <div class="dropdown-divider"></div>
+                        <div class="dropdown-item" onclick="triggerAction('export-png')">Export PNG…<span class="shortcut">Ctrl+Shift+E</span></div>
+                        <div class="dropdown-item" onclick="triggerAction('export-jpeg')">Export JPEG…<span class="shortcut">Ctrl+Alt+Shift+S</span></div>
+                    </div>
+                </div>
+                <div class="menu-item" data-menu="edit">Edit
+                    <div class="dropdown-menu">
+                        <div class="dropdown-item" onclick="triggerAction('undo')">Undo<span class="shortcut">Ctrl+Z</span></div>
+                        <div class="dropdown-item" onclick="triggerAction('redo')">Redo<span class="shortcut">Ctrl+Shift+Z</span></div>
+                        <div class="dropdown-divider"></div>
+                        <div class="dropdown-item" onclick="triggerAction('cut')">Cut<span class="shortcut">Ctrl+X</span></div>
+                        <div class="dropdown-item" onclick="triggerAction('copy')">Copy<span class="shortcut">Ctrl+C</span></div>
+                        <div class="dropdown-item" onclick="triggerAction('copy-merged')">Copy Merged<span class="shortcut">Ctrl+Shift+C</span></div>
+                        <div class="dropdown-item" onclick="triggerAction('paste')">Paste<span class="shortcut">Ctrl+V</span></div>
+                        <div class="dropdown-divider"></div>
+                        <div class="dropdown-item" onclick="triggerAction('free-transform')">Free Transform<span class="shortcut">Ctrl+T</span></div>
+                        <div class="dropdown-item" onclick="triggerAction('fill-foreground')">Fill Foreground<span class="shortcut">Alt+Del</span></div>
+                        <div class="dropdown-item" onclick="triggerAction('fill-background')">Fill Background<span class="shortcut">Ctrl+Del</span></div>
+                        <div class="dropdown-item" onclick="triggerAction('content-aware-fill')">Content-Aware Fill…<span class="shortcut">Shift+F5</span></div>
+                        <div class="dropdown-divider"></div>
+                        <div class="dropdown-item" onclick="triggerAction('keyboard-shortcuts')">Keyboard Shortcuts…</div>
+                    </div>
+                </div>
+                <div class="menu-item" data-menu="image">Image
+                    <div class="dropdown-menu">
+                        <div class="dropdown-item" onclick="triggerAction('filter-levels')">Levels…<span class="shortcut">Ctrl+L</span></div>
+                        <div class="dropdown-item" onclick="triggerAction('filter-curves')">Curves…<span class="shortcut">Ctrl+M</span></div>
+                        <div class="dropdown-item" onclick="triggerAction('filter-huesat')">Hue/Saturation…<span class="shortcut">Ctrl+U</span></div>
+                        <div class="dropdown-item" onclick="triggerAction('filter-invert')">Invert<span class="shortcut">Ctrl+I</span></div>
+                        <div class="dropdown-divider"></div>
+                        <div class="dropdown-item" onclick="triggerAction('canvas-size')">Canvas Size…<span class="shortcut">Ctrl+Alt+C</span></div>
+                        <div class="dropdown-item" onclick="triggerAction('image-size')">Image Size…<span class="shortcut">Ctrl+Alt+I</span></div>
+                        <div class="dropdown-divider"></div>
+                        <div class="dropdown-item" onclick="triggerAction('flip-canvas-h')">Flip Canvas Horizontal</div>
+                        <div class="dropdown-item" onclick="triggerAction('flip-canvas-v')">Flip Canvas Vertical</div>
+                    </div>
+                </div>
+                <div class="menu-item" data-menu="layer">Layer
+                    <div class="dropdown-menu">
+                        <div class="dropdown-item" onclick="triggerAction('new-layer')">New Blank Layer<span class="shortcut">Ctrl+Shift+N</span></div>
+                        <div class="dropdown-item" onclick="triggerAction('duplicate-layer')">Duplicate Layer<span class="shortcut">Ctrl+J</span></div>
+                        <div class="dropdown-item" onclick="triggerAction('delete-layer')">Delete Layer<span class="shortcut">Del</span></div>
+                        <div class="dropdown-divider"></div>
+                        <div class="dropdown-item" onclick="triggerAction('toggle-clipping-mask')">Create Clipping Mask<span class="shortcut">Ctrl+Alt+G</span></div>
+                        <div class="dropdown-item" onclick="triggerAction('add-layer-mask')">Add Layer Mask</div>
+                        <div class="dropdown-divider"></div>
+                        <div class="dropdown-item" onclick="triggerAction('merge-layers')">Merge Down<span class="shortcut">Ctrl+E</span></div>
+                        <div class="dropdown-item" onclick="triggerAction('flatten-image')">Flatten Image</div>
+                        <div class="dropdown-divider"></div>
+                        <div class="dropdown-item" onclick="triggerAction('flip-layer-h')">Flip Layer Horizontal</div>
+                        <div class="dropdown-item" onclick="triggerAction('flip-layer-v')">Flip Layer Vertical</div>
+                    </div>
+                </div>
+                <div class="menu-item" data-menu="select">Select
+                    <div class="dropdown-menu">
+                        <div class="dropdown-item" onclick="triggerAction('select-all')">All<span class="shortcut">Ctrl+A</span></div>
+                        <div class="dropdown-item" onclick="triggerAction('deselect')">Deselect<span class="shortcut">Ctrl+D</span></div>
+                        <div class="dropdown-item" onclick="triggerAction('invert-selection')">Inverse<span class="shortcut">Ctrl+Shift+I</span></div>
+                    </div>
+                </div>
+                <div class="menu-item" data-menu="filter">Filter
+                    <div class="dropdown-menu">
+                        <div class="dropdown-item" onclick="triggerAction('filter-gaussian-blur')">Gaussian Blur…</div>
+                        <div class="dropdown-item" onclick="triggerAction('filter-add-noise')">Add Noise…</div>
+                        <div class="dropdown-item" onclick="triggerAction('filter-exposure')">Exposure…</div>
+                    </div>
+                </div>
+                <div class="menu-item" data-menu="view">View
+                    <div class="dropdown-menu">
+                        <div class="dropdown-item" onclick="triggerAction('zoom-fit')">Fit Canvas<span class="shortcut">Ctrl+0</span></div>
+                        <div class="dropdown-item" onclick="triggerAction('zoom-100')">Actual Pixels (100%)<span class="shortcut">Ctrl+1</span></div>
+                        <div class="dropdown-item" onclick="triggerAction('zoom-in')">Zoom In<span class="shortcut">Ctrl+=</span></div>
+                        <div class="dropdown-item" onclick="triggerAction('zoom-out')">Zoom Out<span class="shortcut">Ctrl+-</span></div>
+                        <div class="dropdown-divider"></div>
+                        <div class="dropdown-item" onclick="triggerAction('toggle-rulers')">Toggle Rulers<span class="shortcut">Ctrl+R</span></div>
+                        <div class="dropdown-item" onclick="triggerAction('toggle-guides')">Toggle Guides<span class="shortcut">Ctrl+;</span></div>
+                        <div class="dropdown-item" onclick="triggerAction('clear-guides')">Clear Guides</div>
+                    </div>
+                </div>
+                <div class="menu-item" data-menu="help">Help
+                    <div class="dropdown-menu">
+                        <div class="dropdown-item" onclick="triggerAction('about')">About Compositor</div>
+                        <div class="dropdown-item" onclick="triggerAction('keyboard-shortcuts')">Keyboard Shortcuts</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="window-controls">
+            <button class="control-btn minimize" onclick="window.electronAPI ? window.electronAPI.minimizeWindow() : null" title="Minimize">
+                <svg width="10" height="1" viewBox="0 0 10 1"><rect width="10" height="1" fill="currentColor"/></svg>
+            </button>
+            <button class="control-btn maximize" onclick="window.electronAPI ? window.electronAPI.maximizeWindow() : null" title="Maximize">
+                <svg width="10" height="10" viewBox="0 0 10 10"><rect width="10" height="10" fill="none" stroke="currentColor" stroke-width="1"/></svg>
+            </button>
+            <button class="control-btn close" onclick="window.electronAPI ? window.electronAPI.closeWindow() : window.close()" title="Close">
+                <svg width="10" height="10" viewBox="0 0 10 10"><path d="M0,0 L10,10 M10,0 L0,10" stroke="currentColor" stroke-width="1.2"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- Dynamic Contextual Tool Options Bar -->
+    <div class="tool-options-bar" id="toolOptionsBar">
+        <!-- Rendered dynamically depending on selected tool -->
+    </div>
+
+    <!-- Main Workspace -->
+    <div class="main-workspace">
+        <!-- Left Toolbar -->
+        <div class="toolbar" id="toolbar">
+            <button class="tool-btn active" data-tool="move" title="Move & Transform Tool (V)">
+                <svg viewBox="0 0 24 24"><path d="M10 2L7 5h2v4H5V7L2 10l3 3v-2h4v4H7l3 3 3-3h-2v-4h4v2l3-3-3-3v2h-4V5h2L10 2z"/></svg>
+            </button>
+            <button class="tool-btn" data-tool="marquee" title="Marquee Selection Tool (M)">
+                <svg viewBox="0 0 24 24"><path d="M4 4h4v2H4v4H2V4h2zm16 0h-4v2h4v4h2V4h-2zM4 20h4v-2H4v-4H2v6h2zm16 0h-4v-2h4v-4h2v6h-2z"/></svg>
+            </button>
+            <button class="tool-btn" data-tool="lasso" title="Lasso Tool (L)">
+                <svg viewBox="0 0 24 24"><path d="M12.3 2a9.7 9.7 0 0 0-9.7 9.7c0 3.7 2 6.9 5.1 8.5l1.8-3.4A5.7 5.7 0 0 1 6.6 11.7a5.7 5.7 0 1 1 11.4 0c0 2.2-1.2 4.1-3 5.1l1.8 3.4c3.5-1.9 5.8-5.5 5.8-9.5A9.7 9.7 0 0 0 12.3 2z"/></svg>
+            </button>
+            <button class="tool-btn" data-tool="wand" title="Magic Wand Tool (W)">
+                <svg viewBox="0 0 24 24"><path d="M7.5 5.6L5.6 7.5l10.9 10.9 1.9-1.9L7.5 5.6zm14.2 2.1l-1.4-1.4 1.4-1.4-1.4-1.4-1.4 1.4-1.4-1.4-1.4 1.4 1.4 1.4-1.4 1.4 1.4 1.4 1.4-1.4 1.4 1.4 1.4-1.4z"/></svg>
+            </button>
+            <button class="tool-btn" data-tool="crop" title="Crop Tool (C)">
+                <svg viewBox="0 0 24 24"><path d="M7 17V1H5v4H1v2h4v10a2 2 0 0 0 2 2h10v4h2v-4h4v-2H7zm10-4h2V7a2 2 0 0 0-2-2H11v2h6v6z"/></svg>
+            </button>
+            <button class="tool-btn" data-tool="eyedropper" title="Eyedropper Tool (I)">
+                <svg viewBox="0 0 24 24"><path d="M20.7 5.6l-2.3-2.3c-.8-.8-2-.8-2.8 0l-3.2 3.2 5.1 5.1 3.2-3.2c.8-.8.8-2 0-2.8zm-9.4 4.8L4 17.7V20h2.3l7.3-7.3-2.3-2.3z"/></svg>
+            </button>
+            <div class="toolbar-divider"></div>
+            <button class="tool-btn" data-tool="brush" title="Brush Tool (B)">
+                <svg viewBox="0 0 24 24"><path d="M7 14c-1.66 0-3 1.34-3 3 0 1.31-1.16 2-2 2 .92 1.22 2.49 2 4 2 2.21 0 4-1.79 4-4 0-1.66-1.34-3-3-3zm13.71-9.71a1 1 0 0 0-1.42 0l-9.58 9.58c.39.5.69 1.07.87 1.69l8.71-8.71a1 1 0 0 0 0-1.42l-1.42-1.42z"/></svg>
+            </button>
+            <button class="tool-btn" data-tool="eraser" title="Eraser Tool (E)">
+                <svg viewBox="0 0 24 24"><path d="M16.24 3.56l4.95 4.94c.78.79.78 2.05 0 2.84L12 20.53a4.008 4.008 0 0 1-5.66 0L2.81 17c-.78-.79-.78-2.05 0-2.84l10.6-10.6c.79-.78 2.05-.78 2.83 0zm-7.07 15.55l3.54-3.54-4.24-4.24-3.54 3.54 4.24 4.24z"/></svg>
+            </button>
+            <button class="tool-btn" data-tool="heal" title="Clone Stamp / Healing (S)">
+                <svg viewBox="0 0 24 24"><path d="M12 2a4 4 0 0 0-4 4c0 1.95 1.4 3.57 3.25 3.92L10 16H6v4h12v-4h-4l-1.25-6.08A4.002 4.002 0 0 0 12 2zm0 2a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/></svg>
+            </button>
+            <button class="tool-btn" data-tool="gradient" title="Gradient Tool (G)">
+                <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/><path d="M7 7h10v2H7zm0 4h10v2H7zm0 4h10v2H7z" opacity=".3"/></svg>
+            </button>
+            <button class="tool-btn" data-tool="type" title="Type Tool (T)">
+                <svg viewBox="0 0 24 24"><path d="M5 4v3h5.5v12h3V7H19V4H5z"/></svg>
+            </button>
+            <button class="tool-btn" data-tool="shape" title="Shape Tool (U)">
+                <svg viewBox="0 0 24 24"><path d="M3 3h18v18H3V3zm2 2v14h14V5H5z"/></svg>
+            </button>
+            <div class="toolbar-divider"></div>
+            <button class="tool-btn" data-tool="hand" title="Hand Tool (H / Space / Middle Click)">
+                <svg viewBox="0 0 24 24"><path d="M13 24c-3.26 0-6.19-1.99-7.4-5.02l-3.03-7.61c-.26-.65-.12-1.4.36-1.89l1.4-1.4 6.13 4.29V4.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5v7h1V2.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5v9h1v-7c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5v8.5h1V6.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5V17c0 3.86-3.14 7-7 7z"/></svg>
+            </button>
+            <button class="tool-btn" data-tool="zoom" title="Zoom Tool (Z)">
+                <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+            </button>
+
+            <!-- Color Swatches -->
+            <div class="color-swatches">
+                <input type="color" id="fgColorPicker" style="display:none" onchange="engine.foregroundColor = this.value; updateSwatches();">
+                <input type="color" id="bgColorPicker" style="display:none" onchange="engine.backgroundColor = this.value; updateSwatches();">
+                <button class="color-swap-btn" title="Swap Colors (X)" onclick="swapColors()">⇄</button>
+                <div class="swatch swatch-fg" id="swatchFg" title="Foreground Color" onclick="document.getElementById('fgColorPicker').click()"></div>
+                <div class="swatch swatch-bg" id="swatchBg" title="Background Color" onclick="document.getElementById('bgColorPicker').click()"></div>
+            </div>
+        </div>
+
+        <!-- Center Canvas Viewport -->
+        <div class="canvas-viewport" id="viewport">
+            <div class="ruler-corner"></div>
+            <div class="ruler-h" id="rulerH"></div>
+            <div class="ruler-v" id="rulerV"></div>
+
+            <div class="canvas-container" id="canvasContainer">
+                <canvas id="mainCanvas"></canvas>
+                <canvas id="overlayCanvas"></canvas>
+            </div>
+        </div>
+
+        <!-- Right Side Panels -->
+        <div class="panels-sidebar">
+            <div class="panel-tabs">
+                <div class="panel-tab active" data-tab="layers" onclick="switchTab('layers')">Layers</div>
+                <div class="panel-tab" data-tab="history" onclick="switchTab('history')">History</div>
+                <div class="panel-tab" data-tab="adjustments" onclick="switchTab('adjustments')">Adjustments</div>
+            </div>
+
+            <!-- Layers Tab -->
+            <div class="panel-body" id="tabLayers">
+                <div class="layers-header">
+                    <select id="blendModeSelect" onchange="updateActiveLayerBlend(this.value)">
+                        <option value="Normal">Normal</option>
+                        <option value="Multiply">Multiply</option>
+                        <option value="Screen">Screen</option>
+                        <option value="Overlay">Overlay</option>
+                        <option value="Darken">Darken</option>
+                        <option value="Lighten">Lighten</option>
+                        <option value="Color Dodge">Color Dodge</option>
+                        <option value="Color Burn">Color Burn</option>
+                        <option value="Difference">Difference</option>
+                        <option value="Soft Light">Soft Light</option>
+                        <option value="Hard Light">Hard Light</option>
+                    </select>
+                    <div class="opacity-box">
+                        <span class="option-label">Op:</span>
+                        <input type="number" id="layerOpacityInput" class="option-input" min="0" max="100" value="100" style="width:46px" onchange="updateActiveLayerOpacity(this.value)">
+                    </div>
+                </div>
+
+                <div class="layer-list" id="layerList">
+                    <!-- Layer items generated dynamically -->
+                </div>
+
+                <div class="layers-footer">
+                    <button class="panel-icon-btn" title="Create Clipping Mask (Ctrl+Alt+G)" onclick="triggerAction('toggle-clipping-mask')">◫</button>
+                    <button class="panel-icon-btn" title="Add Layer Mask" onclick="triggerAction('add-layer-mask')">▢</button>
+                    <button class="panel-icon-btn" title="Merge Down (Ctrl+E)" onclick="triggerAction('merge-layers')">▼</button>
+                    <button class="panel-icon-btn" title="New Blank Layer (Ctrl+Shift+N)" onclick="triggerAction('new-layer')">＋</button>
+                    <button class="panel-icon-btn" title="Delete Layer (Delete)" onclick="triggerAction('delete-layer')">🗑</button>
+                </div>
+            </div>
+
+            <!-- History Tab -->
+            <div class="panel-body" id="tabHistory" style="display:none">
+                <div class="history-list" id="historyList">
+                    <!-- History states generated dynamically -->
+                </div>
+            </div>
+
+            <!-- Adjustments Tab -->
+            <div class="panel-body" id="tabAdjustments" style="display:none; padding:12px; gap:8px;">
+                <button class="btn btn-secondary" style="width:100%; text-align:left;" onclick="triggerAction('filter-levels')">📊 Levels Adjustment…</button>
+                <button class="btn btn-secondary" style="width:100%; text-align:left;" onclick="triggerAction('filter-curves')">📈 Curves Adjustment…</button>
+                <button class="btn btn-secondary" style="width:100%; text-align:left;" onclick="triggerAction('filter-huesat')">🎨 Hue / Saturation…</button>
+                <button class="btn btn-secondary" style="width:100%; text-align:left;" onclick="triggerAction('filter-invert')">🔄 Invert Colors</button>
+                <button class="btn btn-secondary" style="width:100%; text-align:left;" onclick="triggerAction('filter-gaussian-blur')">💧 Gaussian Blur…</button>
+                <button class="btn btn-secondary" style="width:100%; text-align:left;" onclick="triggerAction('filter-add-noise')">✨ Add Film Grain / Noise…</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Bar -->
+    <div class="status-bar">
+        <span id="statusInfo">Compositor ready</span>
+        <span id="docInfo">1200 × 800 px | 100%</span>
+    </div>
+
+    <!-- Modal Sheets / Dialogs -->
+
+    <!-- New Canvas Dialog -->
+    <div class="modal-overlay" id="modalNewCanvas">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <span>New Canvas</span>
+                <button class="modal-close-btn" onclick="closeModal('modalNewCanvas')">×</button>
+            </div>
+            <div class="modal-content">
+                <div class="form-row">
+                    <span class="form-label">Width:</span>
+                    <input type="number" id="newCanvasWidth" class="form-control" value="1200" min="10" max="10000">
+                    <span>px</span>
+                </div>
+                <div class="form-row">
+                    <span class="form-label">Height:</span>
+                    <input type="number" id="newCanvasHeight" class="form-control" value="800" min="10" max="10000">
+                    <span>px</span>
+                </div>
+                <div class="form-row">
+                    <span class="form-label">Background:</span>
+                    <select id="newCanvasBg" class="form-control">
+                        <option value="#ffffff">White</option>
+                        <option value="#000000">Black</option>
+                        <option value="transparent">Transparent</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modalNewCanvas')">Cancel</button>
+                <button class="btn btn-primary" onclick="confirmNewCanvas()">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Levels Dialog -->
+    <div class="modal-overlay" id="modalLevels">
+        <div class="modal-dialog" style="width:480px;">
+            <div class="modal-header">
+                <span>Levels Adjustment</span>
+                <button class="modal-close-btn" onclick="closeModal('modalLevels')">×</button>
+            </div>
+            <div class="modal-content">
+                <canvas class="histogram-canvas" id="levelsHistogramCanvas"></canvas>
+                <div class="form-row">
+                    <span class="form-label">Black Point:</span>
+                    <input type="range" id="levelsBlackSlider" class="option-slider" min="0" max="250" value="0" style="flex:1" oninput="document.getElementById('levelsBlackVal').value=this.value">
+                    <input type="number" id="levelsBlackVal" class="option-input" value="0" style="width:44px" onchange="document.getElementById('levelsBlackSlider').value=this.value">
+                </div>
+                <div class="form-row">
+                    <span class="form-label">Midtones (Gamma):</span>
+                    <input type="range" id="levelsGammaSlider" class="option-slider" min="0.2" max="3.0" step="0.05" value="1.0" style="flex:1" oninput="document.getElementById('levelsGammaVal').value=this.value">
+                    <input type="number" id="levelsGammaVal" class="option-input" value="1.0" step="0.05" style="width:44px" onchange="document.getElementById('levelsGammaSlider').value=this.value">
+                </div>
+                <div class="form-row">
+                    <span class="form-label">White Point:</span>
+                    <input type="range" id="levelsWhiteSlider" class="option-slider" min="5" max="255" value="255" style="flex:1" oninput="document.getElementById('levelsWhiteVal').value=this.value">
+                    <input type="number" id="levelsWhiteVal" class="option-input" value="255" style="width:44px" onchange="document.getElementById('levelsWhiteSlider').value=this.value">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modalLevels')">Cancel</button>
+                <button class="btn btn-primary" onclick="confirmLevels()">Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hue/Saturation Dialog -->
+    <div class="modal-overlay" id="modalHueSat">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <span>Hue / Saturation</span>
+                <button class="modal-close-btn" onclick="closeModal('modalHueSat')">×</button>
+            </div>
+            <div class="modal-content">
+                <div class="form-row">
+                    <span class="form-label">Hue:</span>
+                    <input type="range" id="hueSlider" class="option-slider" min="-180" max="180" value="0" style="flex:1" oninput="document.getElementById('hueVal').value=this.value">
+                    <input type="number" id="hueVal" class="option-input" value="0" style="width:48px" onchange="document.getElementById('hueSlider').value=this.value">
+                </div>
+                <div class="form-row">
+                    <span class="form-label">Saturation:</span>
+                    <input type="range" id="satSlider" class="option-slider" min="-100" max="100" value="0" style="flex:1" oninput="document.getElementById('satVal').value=this.value">
+                    <input type="number" id="satVal" class="option-input" value="0" style="width:48px" onchange="document.getElementById('satSlider').value=this.value">
+                </div>
+                <div class="form-row">
+                    <span class="form-label">Lightness:</span>
+                    <input type="range" id="lightSlider" class="option-slider" min="-100" max="100" value="0" style="flex:1" oninput="document.getElementById('lightVal').value=this.value">
+                    <input type="number" id="lightVal" class="option-input" value="0" style="width:48px" onchange="document.getElementById('lightSlider').value=this.value">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modalHueSat')">Cancel</button>
+                <button class="btn btn-primary" onclick="confirmHueSat()">Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Gaussian Blur Dialog -->
+    <div class="modal-overlay" id="modalBlur">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <span>Gaussian Blur</span>
+                <button class="modal-close-btn" onclick="closeModal('modalBlur')">×</button>
+            </div>
+            <div class="modal-content">
+                <div class="form-row">
+                    <span class="form-label">Radius:</span>
+                    <input type="range" id="blurRadiusSlider" class="option-slider" min="1" max="50" value="6" style="flex:1" oninput="document.getElementById('blurRadiusVal').value=this.value">
+                    <input type="number" id="blurRadiusVal" class="option-input" value="6" min="1" max="50" style="width:48px" onchange="document.getElementById('blurRadiusSlider').value=this.value">
+                    <span>px</span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modalBlur')">Cancel</button>
+                <button class="btn btn-primary" onclick="confirmBlur()">Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Noise Dialog -->
+    <div class="modal-overlay" id="modalNoise">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <span>Add Noise</span>
+                <button class="modal-close-btn" onclick="closeModal('modalNoise')">×</button>
+            </div>
+            <div class="modal-content">
+                <div class="form-row">
+                    <span class="form-label">Amount:</span>
+                    <input type="range" id="noiseAmountSlider" class="option-slider" min="1" max="100" value="20" style="flex:1" oninput="document.getElementById('noiseAmountVal').value=this.value">
+                    <input type="number" id="noiseAmountVal" class="option-input" value="20" min="1" max="100" style="width:48px" onchange="document.getElementById('noiseAmountSlider').value=this.value">
+                    <span>%</span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modalNoise')">Cancel</button>
+                <button class="btn btn-primary" onclick="confirmNoise()">Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Keyboard Shortcuts Dialog -->
+    <div class="modal-overlay" id="modalShortcuts">
+        <div class="modal-dialog" style="width:520px; max-height:80vh; display:flex; flex-direction:column;">
+            <div class="modal-header">
+                <span>Keyboard Shortcuts</span>
+                <button class="modal-close-btn" onclick="closeModal('modalShortcuts')">×</button>
+            </div>
+            <div class="modal-content" style="overflow-y:auto; font-size:12px; line-height:1.6;">
+                <table style="width:100%; border-collapse:collapse;">
+                    <tr style="border-bottom:1px solid var(--border-color)"><th style="text-align:left; padding:4px 0">Action / Tool</th><th style="text-align:right">Shortcut</th></tr>
+                    <tr><td>Move Tool</td><td style="text-align:right; font-family:monospace">V</td></tr>
+                    <tr><td>Marquee Tool</td><td style="text-align:right; font-family:monospace">M</td></tr>
+                    <tr><td>Lasso Tool</td><td style="text-align:right; font-family:monospace">L</td></tr>
+                    <tr><td>Magic Wand</td><td style="text-align:right; font-family:monospace">W</td></tr>
+                    <tr><td>Crop Tool</td><td style="text-align:right; font-family:monospace">C</td></tr>
+                    <tr><td>Eyedropper</td><td style="text-align:right; font-family:monospace">I</td></tr>
+                    <tr><td>Brush Tool</td><td style="text-align:right; font-family:monospace">B</td></tr>
+                    <tr><td>Eraser Tool</td><td style="text-align:right; font-family:monospace">E</td></tr>
+                    <tr><td>Clone Stamp / Healing</td><td style="text-align:right; font-family:monospace">S</td></tr>
+                    <tr><td>Gradient Tool</td><td style="text-align:right; font-family:monospace">G</td></tr>
+                    <tr><td>Type Tool</td><td style="text-align:right; font-family:monospace">T</td></tr>
+                    <tr><td>Shape Tool</td><td style="text-align:right; font-family:monospace">U</td></tr>
+                    <tr><td>Hand Tool (Pan)</td><td style="text-align:right; font-family:monospace">H / Space / Middle Click</td></tr>
+                    <tr><td>Zoom Tool</td><td style="text-align:right; font-family:monospace">Z</td></tr>
+                    <tr><td>Swap Colors</td><td style="text-align:right; font-family:monospace">X</td></tr>
+                    <tr><td>Reset Colors (B&W)</td><td style="text-align:right; font-family:monospace">D</td></tr>
+                    <tr style="border-top:1px solid var(--border-color)"><td>Undo / Redo</td><td style="text-align:right; font-family:monospace">Ctrl+Z / Ctrl+Shift+Z</td></tr>
+                    <tr><td>New Canvas</td><td style="text-align:right; font-family:monospace">Ctrl+N</td></tr>
+                    <tr><td>Open / Save Project</td><td style="text-align:right; font-family:monospace">Ctrl+O / Ctrl+S</td></tr>
+                    <tr><td>Free Transform</td><td style="text-align:right; font-family:monospace">Ctrl+T</td></tr>
+                    <tr><td>Duplicate Layer</td><td style="text-align:right; font-family:monospace">Ctrl+J</td></tr>
+                    <tr><td>Merge Layers</td><td style="text-align:right; font-family:monospace">Ctrl+E</td></tr>
+                    <tr><td>Select All / Deselect</td><td style="text-align:right; font-family:monospace">Ctrl+A / Ctrl+D</td></tr>
+                    <tr><td>Fit Canvas / 100% Zoom</td><td style="text-align:right; font-family:monospace">Ctrl+0 / Ctrl+1</td></tr>
+                    <tr><td>Toggle Rulers</td><td style="text-align:right; font-family:monospace">Ctrl+R</td></tr>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="closeModal('modalShortcuts')">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="engine.js"></script>
+    <script src="project-store.js"></script>
+    <script>
+        // Initialize Engine
+        const mainCanvas = document.getElementById('mainCanvas');
+        const overlayCanvas = document.getElementById('overlayCanvas');
+        const engine = new CompositorEngine(mainCanvas, overlayCanvas);
+
+        // Bind UI callbacks
+        engine.onLayerListChange = renderLayerList;
+        engine.onActiveLayerChange = updateActiveLayerUI;
+        engine.onHistoryChange = renderHistoryList;
+        engine.onColorChange = updateSwatches;
+        engine.onZoomChange = updateDocInfo;
+        engine.onStatusChange = (msg) => document.getElementById('statusInfo').textContent = msg;
+
+        // Viewport & Pan/Zoom
+        const viewport = document.getElementById('viewport');
+        const canvasContainer = document.getElementById('canvasContainer');
+
+        function updateCanvasTransform() {
+            canvasContainer.style.width = engine.width + 'px';
+            canvasContainer.style.height = engine.height + 'px';
+            canvasContainer.style.transform = `translate(${engine.viewport.panX}px, ${engine.viewport.panY}px) scale(${engine.viewport.zoom})`;
+            updateDocInfo();
+        }
+
+        function updateDocInfo() {
+            document.getElementById('docInfo').textContent = `${engine.width} × ${engine.height} px | ${Math.round(engine.viewport.zoom * 100)}%`;
+            updateCanvasTransform();
+        }
+
+        // Mouse & Pointer Interactions on Viewport
+        let isPanning = false;
+        let startPan = { x: 0, y: 0 };
+
+        viewport.addEventListener('mousedown', (e) => {
+            const rect = canvasContainer.getBoundingClientRect();
+            const docX = (e.clientX - rect.left) / engine.viewport.zoom;
+            const docY = (e.clientY - rect.top) / engine.viewport.zoom;
+
+            if (e.button === 1 || e.spaceKey || engine.currentTool === 'hand') {
+                isPanning = true;
+                startPan = { x: e.clientX - engine.viewport.panX, y: e.clientY - engine.viewport.panY };
+                viewport.style.cursor = 'grab';
+                return;
+            }
+
+            if (engine.currentTool === 'zoom') {
+                if (e.altKey) engine.zoomOut();
+                else engine.zoomIn();
+                return;
+            }
+
+            engine.pointerDown(docX, docY, e.button, e.shiftKey, e.altKey);
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (isPanning) {
+                engine.viewport.panX = e.clientX - startPan.x;
+                engine.viewport.panY = e.clientY - startPan.y;
+                updateCanvasTransform();
+                return;
+            }
+
+            const rect = canvasContainer.getBoundingClientRect();
+            const docX = (e.clientX - rect.left) / engine.viewport.zoom;
+            const docY = (e.clientY - rect.top) / engine.viewport.zoom;
+
+            engine.pointerMove(docX, docY, e.buttons, e.shiftKey, e.altKey);
+        });
+
+        window.addEventListener('mouseup', () => {
+            if (isPanning) {
+                isPanning = false;
+                viewport.style.cursor = 'default';
+            }
+            engine.pointerUp();
+        });
+
+        viewport.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const zoomFactor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+            const rect = canvasContainer.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            const newZoom = Math.max(0.05, Math.min(32.0, engine.viewport.zoom * zoomFactor));
+            engine.viewport.panX -= (mouseX * (newZoom - engine.viewport.zoom)) / engine.viewport.zoom;
+            engine.viewport.panY -= (mouseY * (newZoom - engine.viewport.zoom)) / engine.viewport.zoom;
+            engine.viewport.zoom = newZoom;
+            updateCanvasTransform();
+        }, { passive: false });
+
+        // Tool Selection
+        const toolButtons = document.querySelectorAll('.tool-btn');
+        toolButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                toolButtons.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                setTool(btn.getAttribute('data-tool'));
+            });
+        });
+
+        function setTool(toolName) {
+            engine.currentTool = toolName;
+            renderToolOptions();
+            engine.renderOverlay();
+        }
+
+        // Render Tool Options Bar dynamically
+        function renderToolOptions() {
+            const bar = document.getElementById('toolOptionsBar');
+            bar.innerHTML = '';
+
+            const toolLabel = document.createElement('span');
+            toolLabel.style.fontWeight = '600';
+            toolLabel.style.color = '#ffffff';
+            toolLabel.textContent = engine.currentTool.toUpperCase();
+            bar.appendChild(toolLabel);
+
+            if (engine.currentTool === 'brush' || engine.currentTool === 'eraser' || engine.currentTool === 'heal') {
+                const s = engine.toolSettings[engine.currentTool === 'eraser' ? 'eraser' : 'brush'];
+                bar.innerHTML += `
+                    <div class="option-group">
+                        <span class="option-label">Size:</span>
+                        <input type="range" class="option-slider" min="1" max="500" value="${s.size}" oninput="engine.toolSettings.${engine.currentTool === 'eraser' ? 'eraser' : 'brush'}.size=parseInt(this.value); this.nextElementSibling.value=this.value">
+                        <input type="number" class="option-input" value="${s.size}" style="width:46px" onchange="engine.toolSettings.${engine.currentTool === 'eraser' ? 'eraser' : 'brush'}.size=parseInt(this.value); this.previousElementSibling.value=this.value">
+                    </div>
+                    <div class="option-group">
+                        <span class="option-label">Hardness:</span>
+                        <input type="range" class="option-slider" min="0" max="100" value="${s.hardness}" oninput="engine.toolSettings.${engine.currentTool === 'eraser' ? 'eraser' : 'brush'}.hardness=parseInt(this.value); this.nextElementSibling.value=this.value+'%'">
+                        <input type="text" class="option-input" value="${s.hardness}%" style="width:46px" readonly>
+                    </div>
+                    <div class="option-group">
+                        <span class="option-label">Opacity:</span>
+                        <input type="range" class="option-slider" min="1" max="100" value="${s.opacity}" oninput="engine.toolSettings.${engine.currentTool === 'eraser' ? 'eraser' : 'brush'}.opacity=parseInt(this.value); this.nextElementSibling.value=this.value+'%'">
+                        <input type="text" class="option-input" value="${s.opacity}%" style="width:46px" readonly>
+                    </div>
+                `;
+            } else if (engine.currentTool === 'wand') {
+                bar.innerHTML += `
+                    <div class="option-group">
+                        <span class="option-label">Tolerance:</span>
+                        <input type="number" class="option-input" value="${engine.toolSettings.wand.tolerance}" min="0" max="255" style="width:48px" onchange="engine.toolSettings.wand.tolerance=parseInt(this.value)">
+                    </div>
+                    <div class="option-group">
+                        <label style="display:flex; align-items:center; gap:4px; cursor:pointer;">
+                            <input type="checkbox" ${engine.toolSettings.wand.contiguous ? 'checked' : ''} onchange="engine.toolSettings.wand.contiguous=this.checked">
+                            <span class="option-label">Contiguous</span>
+                        </label>
+                    </div>
+                `;
+            } else if (engine.currentTool === 'type') {
+                bar.innerHTML += `
+                    <div class="option-group">
+                        <span class="option-label">Text:</span>
+                        <input type="text" class="option-input" value="${engine.toolSettings.type.text}" style="width:140px" onchange="engine.toolSettings.type.text=this.value">
+                    </div>
+                    <div class="option-group">
+                        <span class="option-label">Size:</span>
+                        <input type="number" class="option-input" value="${engine.toolSettings.type.size}" min="8" max="200" style="width:50px" onchange="engine.toolSettings.type.size=parseInt(this.value)">
+                    </div>
+                `;
+            } else if (engine.currentTool === 'shape') {
+                bar.innerHTML += `
+                    <div class="option-group">
+                        <span class="option-label">Type:</span>
+                        <select class="option-input" onchange="engine.toolSettings.shape.type=this.value">
+                            <option value="rectangle">Rectangle</option>
+                            <option value="rounded">Rounded Rectangle</option>
+                            <option value="ellipse">Ellipse</option>
+                            <option value="line">Line</option>
+                        </select>
+                    </div>
+                `;
+            }
+        }
+
+        // Color Swatches
+        function updateSwatches() {
+            document.getElementById('swatchFg').style.backgroundColor = engine.foregroundColor;
+            document.getElementById('swatchBg').style.backgroundColor = engine.backgroundColor;
+        }
+
+        function swapColors() {
+            const temp = engine.foregroundColor;
+            engine.foregroundColor = engine.backgroundColor;
+            engine.backgroundColor = temp;
+            updateSwatches();
+        }
+
+        function resetColors() {
+            engine.foregroundColor = '#ffffff';
+            engine.backgroundColor = '#000000';
+            updateSwatches();
+        }
+
+        // Layers Panel UI
+        function renderLayerList(layers) {
+            const list = document.getElementById('layerList');
+            list.innerHTML = '';
+
+            for (let i = layers.length - 1; i >= 0; i--) {
+                const layer = layers[i];
+                const item = document.createElement('div');
+                item.className = 'layer-item' + (layer.id === engine.activeLayerId ? ' active' : '');
+                item.onclick = (e) => {
+                    engine.activeLayerId = layer.id;
+                    engine.notifyUI();
+                    engine.updateTransformBox();
+                    engine.render();
+                };
+
+                const visBtn = document.createElement('button');
+                visBtn.className = 'layer-vis-btn';
+                visBtn.innerHTML = layer.visible ? '👁' : ' ';
+                visBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    layer.visible = !layer.visible;
+                    visBtn.innerHTML = layer.visible ? '👁' : ' ';
+                    engine.render();
+                };
+
+                const thumb = document.createElement('img');
+                thumb.className = 'layer-thumbnail';
+                if (layer.canvas) {
+                    thumb.src = layer.canvas.toDataURL('image/png');
+                }
+
+                const info = document.createElement('div');
+                info.className = 'layer-info';
+                info.innerHTML = `
+                    <span class="layer-name">${layer.name}</span>
+                    <span class="layer-meta">${layer.blendMode} | ${Math.round(layer.opacity * 100)}%</span>
+                `;
+
+                item.appendChild(visBtn);
+                item.appendChild(thumb);
+                item.appendChild(info);
+                list.appendChild(item);
+            }
+        }
+
+        function updateActiveLayerUI(activeLayer) {
+            if (!activeLayer) return;
+            document.getElementById('blendModeSelect').value = activeLayer.blendMode;
+            document.getElementById('layerOpacityInput').value = Math.round(activeLayer.opacity * 100);
+            renderLayerList(engine.layers);
+        }
+
+        function updateActiveLayerBlend(mode) {
+            const active = engine.getActiveLayer();
+            if (active) {
+                active.blendMode = mode;
+                engine.recordHistory('Change Blend Mode');
+                engine.render();
+                renderLayerList(engine.layers);
+            }
+        }
+
+        function updateActiveLayerOpacity(val) {
+            const active = engine.getActiveLayer();
+            if (active) {
+                active.opacity = Math.max(0, Math.min(100, parseInt(val))) / 100;
+                engine.recordHistory('Change Opacity');
+                engine.render();
+                renderLayerList(engine.layers);
+            }
+        }
+
+        // History Panel UI
+        function renderHistoryList(history, activeIndex) {
+            const list = document.getElementById('historyList');
+            list.innerHTML = '';
+
+            for (let i = 0; i < history.length; i++) {
+                const item = document.createElement('div');
+                item.className = 'history-item' + (i === activeIndex ? ' active' : '') + (i > activeIndex ? ' undone' : '');
+                item.textContent = history[i].name;
+                item.onclick = () => {
+                    engine.historyIndex = i;
+                    engine.restoreSnapshot(history[i]);
+                };
+                list.appendChild(item);
+            }
+            list.scrollTop = list.scrollHeight;
+        }
+
+        // Tab Switching
+        function switchTab(tabId) {
+            document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
+            document.querySelector(`.panel-tab[data-tab="${tabId}"]`).classList.add('active');
+
+            document.getElementById('tabLayers').style.display = tabId === 'layers' ? 'flex' : 'none';
+            document.getElementById('tabHistory').style.display = tabId === 'history' ? 'flex' : 'none';
+            document.getElementById('tabAdjustments').style.display = tabId === 'adjustments' ? 'flex' : 'none';
+        }
+
+        // Menu Dropdown Management
+        document.querySelectorAll('.menu-item').forEach(item => {
+            item.addEventListener('mouseenter', () => {
+                const anyActive = document.querySelector('.menu-item.active');
+                if (anyActive) {
+                    document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
+                    item.classList.add('active');
+                }
+            });
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const wasActive = item.classList.contains('active');
+                document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
+                if (!wasActive) item.classList.add('active');
+            });
+        });
+
+        window.addEventListener('click', () => {
+            document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
+        });
+
+        // Modal Sheets
+        function openModal(id) { document.getElementById(id).classList.add('active'); }
+        function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+
+        function confirmNewCanvas() {
+            const w = parseInt(document.getElementById('newCanvasWidth').value);
+            const h = parseInt(document.getElementById('newCanvasHeight').value);
+            const bg = document.getElementById('newCanvasBg').value;
+            engine.newCanvas(w, h, bg);
+            closeModal('modalNewCanvas');
+        }
+
+        function confirmLevels() {
+            const bp = parseInt(document.getElementById('levelsBlackVal').value);
+            const gamma = parseFloat(document.getElementById('levelsGammaVal').value);
+            const wp = parseInt(document.getElementById('levelsWhiteVal').value);
+            engine.applyLevels(bp, gamma, wp);
+            closeModal('modalLevels');
+        }
+
+        function confirmHueSat() {
+            const h = parseInt(document.getElementById('hueVal').value);
+            const s = parseInt(document.getElementById('satVal').value);
+            const l = parseInt(document.getElementById('lightVal').value);
+            engine.applyHueSaturation(h, s, l);
+            closeModal('modalHueSat');
+        }
+
+        function confirmBlur() {
+            const r = parseInt(document.getElementById('blurRadiusVal').value);
+            engine.applyGaussianBlur(r);
+            closeModal('modalBlur');
+        }
+
+        function confirmNoise() {
+            const a = parseInt(document.getElementById('noiseAmountVal').value);
+            engine.applyAddNoise(a);
+            closeModal('modalNoise');
+        }
+
+        // Action Dispatcher (Menu / Shortcuts / IPC)
+        function triggerAction(action, data = null) {
+            document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
+
+            switch (action) {
+                case 'new-canvas': openModal('modalNewCanvas'); break;
+                case 'open-file': handleOpenFile(); break;
+                case 'import-image': handleImportImage(); break;
+                case 'save-project': handleSaveProject(); break;
+                case 'save-as-project': handleSaveProject(true); break;
+                case 'export-png': handleExportPNG(); break;
+                case 'export-jpeg': handleExportJPEG(); break;
+                case 'undo': engine.undo(); break;
+                case 'redo': engine.redo(); break;
+                case 'free-transform': setTool('move'); break;
+                case 'new-layer': engine.addLayer(); break;
+                case 'duplicate-layer': engine.duplicateLayer(); break;
+                case 'delete-layer': engine.deleteActiveLayer(); break;
+                case 'merge-layers': engine.mergeLayers(); break;
+                case 'flatten-image': engine.flattenImage(); break;
+                case 'toggle-clipping-mask': engine.toggleClippingMask(); break;
+                case 'add-layer-mask': engine.addMaskToLayer(engine.getActiveLayer()); break;
+                case 'flip-layer-h': engine.flipLayer(true); break;
+                case 'flip-layer-v': engine.flipLayer(false); break;
+                case 'flip-canvas-h': engine.flipCanvas(true); break;
+                case 'flip-canvas-v': engine.flipCanvas(false); break;
+                case 'select-all': engine.selectAll(); break;
+                case 'deselect': engine.deselect(); break;
+                case 'invert-selection': engine.invertSelection(); break;
+                case 'content-aware-fill': engine.applyContentAwareFill(); break;
+                case 'filter-levels':
+                    openModal('modalLevels');
+                    renderHistogram();
+                    break;
+                case 'filter-huesat': openModal('modalHueSat'); break;
+                case 'filter-invert': engine.applyInvert(); break;
+                case 'filter-gaussian-blur': openModal('modalBlur'); break;
+                case 'filter-add-noise': openModal('modalNoise'); break;
+                case 'zoom-fit': engine.fitToScreen(); break;
+                case 'zoom-100': engine.zoomTo(1.0); break;
+                case 'zoom-in': engine.zoomIn(); break;
+                case 'zoom-out': engine.zoomOut(); break;
+                case 'toggle-rulers':
+                    engine.showRulers = !engine.showRulers;
+                    document.getElementById('rulerH').style.display = engine.showRulers ? 'block' : 'none';
+                    document.getElementById('rulerV').style.display = engine.showRulers ? 'block' : 'none';
+                    break;
+                case 'toggle-guides':
+                    engine.showGuides = !engine.showGuides;
+                    engine.renderOverlay();
+                    break;
+                case 'clear-guides':
+                    engine.guides = { horizontal: [], vertical: [] };
+                    engine.renderOverlay();
+                    break;
+                case 'keyboard-shortcuts': openModal('modalShortcuts'); break;
+                case 'about':
+                    alert("Compositor for Windows v1.0.0\nThe lightweight, focused Photoshop alternative.\nOriginal macOS version by Robbie Tilton.\nWindows port by MaksVolkov7863.");
+                    break;
+            }
+        }
+
+        // Render Histogram in Levels Dialog
+        function renderHistogram() {
+            const hist = engine.computeHistogram();
+            if (!hist) return;
+            const hCanvas = document.getElementById('levelsHistogramCanvas');
+            const hCtx = hCanvas.getContext('2d');
+            hCanvas.width = hCanvas.clientWidth;
+            hCanvas.height = hCanvas.clientHeight;
+            hCtx.clearRect(0, 0, hCanvas.width, hCanvas.height);
+
+            let maxVal = 0;
+            for (let i = 0; i < 256; i++) {
+                if (hist.lum[i] > maxVal) maxVal = hist.lum[i];
+            }
+            if (maxVal === 0) maxVal = 1;
+
+            hCtx.fillStyle = '#666666';
+            for (let i = 0; i < 256; i++) {
+                const x = (i / 256) * hCanvas.width;
+                const barH = (hist.lum[i] / maxVal) * (hCanvas.height - 4);
+                hCtx.fillRect(x, hCanvas.height - barH, hCanvas.width / 256, barH);
+            }
+        }
+
+        // File Dialog Operations via Electron IPC or HTML5
+        async function handleOpenFile() {
+            if (window.electronAPI) {
+                const res = await window.electronAPI.openFileDialog();
+                if (!res.canceled && res.filePaths.length > 0) {
+                    const filePath = res.filePaths[0];
+                    const readRes = await window.electronAPI.readFile(filePath);
+                    if (readRes.success) {
+                        if (filePath.endsWith('.comp')) {
+                            const project = await ProjectStore.deserializeProject(readRes.data, window.JSZip);
+                            loadProjectIntoEngine(project);
+                        } else {
+                            loadBase64Image(readRes.data);
+                        }
+                    }
+                }
+            } else {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = '.comp,.png,.jpg,.jpeg,.webp';
+                input.onchange = (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = async (evt) => {
+                        if (file.name.endsWith('.comp')) {
+                            const base64 = evt.target.result.split(',')[1];
+                            const project = await ProjectStore.deserializeProject(base64, window.JSZip);
+                            loadProjectIntoEngine(project);
+                        } else {
+                            loadBase64Image(evt.target.result);
+                        }
+                    };
+                    if (file.name.endsWith('.comp')) reader.readAsDataURL(file);
+                    else reader.readAsDataURL(file);
+                };
+                input.click();
+            }
+        }
+
+        async function handleImportImage() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/*';
+            input.onchange = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const layer = engine.addLayer(file.name);
+                        layer.ctx.drawImage(img, 0, 0);
+                        engine.render();
+                    };
+                    img.src = evt.target.result;
+                };
+                reader.readAsDataURL(file);
+            };
+            input.click();
+        }
+
+        function loadBase64Image(dataOrUrl) {
+            const img = new Image();
+            img.onload = () => {
+                engine.newCanvas(img.width, img.height, 'transparent');
+                const baseLayer = engine.getActiveLayer();
+                baseLayer.ctx.drawImage(img, 0, 0);
+                engine.render();
+            };
+            img.src = dataOrUrl.startsWith('data:') ? dataOrUrl : `data:image/png;base64,${dataOrUrl}`;
+        }
+
+        function loadProjectIntoEngine(project) {
+            engine.width = project.width;
+            engine.height = project.height;
+            engine.resolution = project.resolution;
+            engine.layers = project.layers;
+            engine.activeLayerId = project.activeLayerId || project.layers[0]?.id;
+            engine.canvas.width = project.width;
+            engine.canvas.height = project.height;
+            engine.overlay.width = project.width;
+            engine.overlay.height = project.height;
+            engine.fitToScreen();
+            engine.render();
+            engine.notifyUI();
+        }
+
+        async function handleSaveProject() {
+            const zipBase64 = await ProjectStore.serializeProject({
+                width: engine.width,
+                height: engine.height,
+                resolution: engine.resolution,
+                activeLayerId: engine.activeLayerId,
+                layers: engine.layers
+            }, window.JSZip);
+
+            if (window.electronAPI) {
+                const saveRes = await window.electronAPI.saveFileDialog({
+                    defaultPath: 'Artwork.comp',
+                    filters: [{ name: 'Compositor Project (*.comp)', extensions: ['comp'] }]
+                });
+                if (!saveRes.canceled && saveRes.filePath) {
+                    await window.electronAPI.writeFile(saveRes.filePath, zipBase64);
+                    engine.notifyStatus('Project saved successfully.');
+                }
+            } else {
+                const a = document.createElement('a');
+                a.href = 'data:application/zip;base64,' + zipBase64;
+                a.download = 'Artwork.comp';
+                a.click();
+            }
+        }
+
+        function handleExportPNG() {
+            const dataUrl = engine.canvas.toDataURL('image/png');
+            const a = document.createElement('a');
+            a.href = dataUrl;
+            a.download = 'Compositor_Export.png';
+            a.click();
+            engine.notifyStatus('Exported PNG.');
+        }
+
+        function handleExportJPEG() {
+            const flatCanvas = document.createElement('canvas');
+            flatCanvas.width = engine.width;
+            flatCanvas.height = engine.height;
+            const flatCtx = flatCanvas.getContext('2d');
+            flatCtx.fillStyle = '#ffffff';
+            flatCtx.fillRect(0, 0, engine.width, engine.height);
+            flatCtx.drawImage(engine.canvas, 0, 0);
+
+            const dataUrl = flatCanvas.toDataURL('image/jpeg', 0.92);
+            const a = document.createElement('a');
+            a.href = dataUrl;
+            a.download = 'Compositor_Export.jpg';
+            a.click();
+            engine.notifyStatus('Exported JPEG.');
+        }
+
+        // Global Keyboard Shortcuts (Photoshop standard)
+        window.addEventListener('keydown', (e) => {
+            // Ignore keystrokes when typing inside inputs
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+
+            const ctrl = e.ctrlKey || e.metaKey;
+            const shift = e.shiftKey;
+            const alt = e.altKey;
+
+            if (ctrl) {
+                switch (e.key.toLowerCase()) {
+                    case 'z':
+                        e.preventDefault();
+                        if (shift) triggerAction('redo');
+                        else triggerAction('undo');
+                        break;
+                    case 'y':
+                        e.preventDefault();
+                        triggerAction('redo');
+                        break;
+                    case 'n': e.preventDefault(); triggerAction('new-canvas'); break;
+                    case 'o': e.preventDefault(); triggerAction('open-file'); break;
+                    case 's': e.preventDefault(); triggerAction(shift ? 'save-as-project' : 'save-project'); break;
+                    case 'a': e.preventDefault(); triggerAction('select-all'); break;
+                    case 'd': e.preventDefault(); triggerAction('deselect'); break;
+                    case 't': e.preventDefault(); triggerAction('free-transform'); break;
+                    case 'j': e.preventDefault(); triggerAction('duplicate-layer'); break;
+                    case 'e': e.preventDefault(); triggerAction(shift ? 'export-png' : 'merge-layers'); break;
+                    case 'l': e.preventDefault(); triggerAction('filter-levels'); break;
+                    case 'm': e.preventDefault(); triggerAction('filter-curves'); break;
+                    case 'u': e.preventDefault(); triggerAction('filter-huesat'); break;
+                    case 'i': e.preventDefault(); triggerAction(shift ? 'invert-selection' : 'filter-invert'); break;
+                    case '0': e.preventDefault(); triggerAction('zoom-fit'); break;
+                    case '1': e.preventDefault(); triggerAction('zoom-100'); break;
+                    case '=': case '+': e.preventDefault(); triggerAction('zoom-in'); break;
+                    case '-': e.preventDefault(); triggerAction('zoom-out'); break;
+                    case 'r': e.preventDefault(); triggerAction('toggle-rulers'); break;
+                    case ';': e.preventDefault(); triggerAction('toggle-guides'); break;
+                    case 'g': if (alt) { e.preventDefault(); triggerAction('toggle-clipping-mask'); } break;
+                }
+            } else {
+                switch (e.key.toLowerCase()) {
+                    case 'v': document.querySelector('[data-tool="move"]').click(); break;
+                    case 'm': document.querySelector('[data-tool="marquee"]').click(); break;
+                    case 'l': document.querySelector('[data-tool="lasso"]').click(); break;
+                    case 'w': document.querySelector('[data-tool="wand"]').click(); break;
+                    case 'c': document.querySelector('[data-tool="crop"]').click(); break;
+                    case 'i': document.querySelector('[data-tool="eyedropper"]').click(); break;
+                    case 'b': document.querySelector('[data-tool="brush"]').click(); break;
+                    case 'e': document.querySelector('[data-tool="eraser"]').click(); break;
+                    case 's': document.querySelector('[data-tool="heal"]').click(); break;
+                    case 'g': document.querySelector('[data-tool="gradient"]').click(); break;
+                    case 't': document.querySelector('[data-tool="type"]').click(); break;
+                    case 'u': document.querySelector('[data-tool="shape"]').click(); break;
+                    case 'h': document.querySelector('[data-tool="hand"]').click(); break;
+                    case 'z': document.querySelector('[data-tool="zoom"]').click(); break;
+                    case 'x': swapColors(); break;
+                    case 'd': resetColors(); break;
+                    case 'delete': triggerAction('delete-layer'); break;
+                }
+            }
+        });
+
+        // Listen to Electron IPC menu actions
+        if (window.electronAPI && window.electronAPI.onMenuAction) {
+            window.electronAPI.onMenuAction((action, data) => triggerAction(action, data));
+        }
+
+        // Initialize display
+        renderToolOptions();
+        updateSwatches();
+        engine.fitToScreen();
+    </script>
+</body>
+</html>
