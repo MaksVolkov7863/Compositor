@@ -8,6 +8,7 @@
     "url": "https://github.com/MaksVolkov7863/Compositor.git"
   },
   "scripts": {
+    "test": "node --test tests/**/*.test.js",
     "start": "electron src/main.js",
     "pack": "electron-builder --dir",
     "dist": "electron-builder --win --x64 --publish never"

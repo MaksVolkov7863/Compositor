@@ -1314,62 +1314,365 @@ class CompositorEngine {
         if (this.onActiveLayerChange) this.onActiveLayerChange(this.getActiveLayer());
     }
 
-    notifyStatus(msg) {
-        if (this.onStatusChange) this.onStatusChange(msg);
-    }
-
-    hexToRgb(hex) {
-        const bigint = parseInt(hex.replace('#', ''), 16);
-        return { r: (bigint >> 16) & 255, g: (bigint >> 8) & 255, b: bigint & 255 };
-    }
-
-    rgbToHex(r, g, b) {
-        return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
-    }
-
-    rgbToHsl(r, g, b) {
-        r /= 255; g /= 255; b /= 255;
-        const max = Math.max(r, g, b), min = Math.min(r, g, b);
-        let h, s, l = (max + min) / 2;
-        if (max === min) {
-            h = s = 0;
+    createCanvas(w, h) {
+        if (typeof document !== 'undefined' && document.createElement) {
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            return canvas;
         } else {
-            const d = max - min;
-            s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-            switch (max) {
-                case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-                case g: h = (b - r) / d + 2; break;
-                case b: h = (r - g) / d + 4; break;
-            }
-            h /= 6;
-        }
-        return { h: Math.round(h * 360), s: Math.round(s * 100), l: Math.round(l * 100) };
-    }
-
-    hslToRgb(h, s, l) {
-        h /= 360; s /= 100; l /= 100;
-        let r, g, b;
-        if (s === 0) {
-            r = g = b = l;
-        } else {
-            const hue2rgb = (p, q, t) => {
-                if (t < 0) t += 1;
-                if (t > 1) t -= 1;
-                if (t < 1/6) return p + (q - p) * 6 * t;
-                if (t < 1/2) return q;
-                if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
-                return p;
+            // Headless mock canvas for automated testing
+            const buffer = new Uint8ClampedArray(w * h * 4);
+            return {
+                width: w,
+                height: h,
+                getContext: () => ({
+                    fillStyle: '#000000',
+                    strokeStyle: '#000000',
+                    globalAlpha: 1.0,
+                    globalCompositeOperation: 'source-over',
+                    filter: 'none',
+                    fillRect: (x, y, rw, rh) => {
+                        for (let py = Math.max(0, y); py < Math.min(h, y + rh); py++) {
+                            for (let px = Math.max(0, x); px < Math.min(w, x + rw); px++) {
+                                const idx = (py * w + px) * 4;
+                                buffer[idx] = 255; buffer[idx+1] = 255; buffer[idx+2] = 255; buffer[idx+3] = 255;
+                            }
+                        }
+                    },
+                    clearRect: (x, y, rw, rh) => {
+                        for (let py = Math.max(0, y); py < Math.min(h, y + rh); py++) {
+                            for (let px = Math.max(0, x); px < Math.min(w, x + rw); px++) {
+                                const idx = (py * w + px) * 4;
+                                buffer[idx] = 0; buffer[idx+1] = 0; buffer[idx+2] = 0; buffer[idx+3] = 0;
+                            }
+                        }
+                    },
+                    getImageData: (x, y, gw, gh) => {
+                        const sub = new Uint8ClampedArray(gw * gh * 4);
+                        for (let py = 0; py < gh; py++) {
+                            for (let px = 0; px < gw; px++) {
+                                const srcIdx = ((y + py) * w + (x + px)) * 4;
+                                const dstIdx = (py * gw + px) * 4;
+                                if (srcIdx >= 0 && srcIdx < buffer.length) {
+                                    sub[dstIdx] = buffer[srcIdx];
+                                    sub[dstIdx+1] = buffer[srcIdx+1];
+                                    sub[dstIdx+2] = buffer[srcIdx+2];
+                                    sub[dstIdx+3] = buffer[srcIdx+3];
+                                }
+                            }
+                        }
+                        return { data: sub, width: gw, height: gh };
+                    },
+                    putImageData: (imgData, x, y) => {
+                        for (let py = 0; py < imgData.height; py++) {
+                            for (let px = 0; px < imgData.width; px++) {
+                                const srcIdx = (py * imgData.width + px) * 4;
+                                const dstIdx = ((y + py) * w + (x + px)) * 4;
+                                if (dstIdx >= 0 && dstIdx < buffer.length) {
+                                    buffer[dstIdx] = imgData.data[srcIdx];
+                                    buffer[dstIdx+1] = imgData.data[srcIdx+1];
+                                    buffer[dstIdx+2] = imgData.data[srcIdx+2];
+                                    buffer[dstIdx+3] = imgData.data[srcIdx+3];
+                                }
+                            }
+                        }
+                    },
+                    drawImage: (src, dx, dy, dw, dh) => {
+                        if (src && src.getContext) {
+                            const srcData = src.getContext().getImageData(0, 0, src.width, src.height);
+                            const targetW = dw || src.width;
+                            const targetH = dh || src.height;
+                            for (let py = 0; py < targetH; py++) {
+                                for (let px = 0; px < targetW; px++) {
+                                    const srcX = Math.floor(px * src.width / targetW);
+                                    const srcY = Math.floor(py * src.height / targetH);
+                                    const sIdx = (srcY * src.width + srcX) * 4;
+                                    const dIdx = ((dy + py) * w + (dx + px)) * 4;
+                                    if (dIdx >= 0 && dIdx < buffer.length) {
+                                        buffer[dIdx] = srcData.data[sIdx];
+                                        buffer[dIdx+1] = srcData.data[sIdx+1];
+                                        buffer[dIdx+2] = srcData.data[sIdx+2];
+                                        buffer[dIdx+3] = srcData.data[sIdx+3];
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    save: () => {},
+                    restore: () => {},
+                    translate: () => {},
+                    rotate: () => {},
+                    scale: () => {},
+                    beginPath: () => {},
+                    arc: () => {},
+                    fill: () => {},
+                    stroke: () => {},
+                    clip: () => {}
+                }),
+                toDataURL: () => 'data:image/png;base64,mock'
             };
-            const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-            const p = 2 * l - q;
-            r = hue2rgb(p, q, h + 1/3);
-            g = hue2rgb(p, q, h);
-            b = hue2rgb(p, q, h - 1/3);
         }
-        return { r: Math.round(r * 255), g: Math.round(g * 255), b: Math.round(b * 255) };
+    }
+
+    // --- Extended Feature Parity Methods ---
+
+    static get BLEND_MODES() {
+        return [
+            'Normal',
+            'Multiply',
+            'Screen',
+            'Overlay',
+            'Darken',
+            'Lighten',
+            'Color Dodge',
+            'Color Burn',
+            'Difference',
+            'Soft Light',
+            'Hard Light'
+        ];
+    }
+
+    cycleBlendMode(forward = true) {
+        const active = this.getActiveLayer();
+        if (!active) return;
+        const modes = CompositorEngine.BLEND_MODES;
+        let idx = modes.indexOf(active.blendMode);
+        if (idx === -1) idx = 0;
+
+        if (forward) {
+            idx = (idx + 1) % modes.length;
+        } else {
+            idx = (idx - 1 + modes.length) % modes.length;
+        }
+
+        active.blendMode = modes[idx];
+        this.recordHistory('Change Blend Mode');
+        this.render();
+        this.notifyUI();
+    }
+
+    resizeCanvas(newWidth, newHeight, anchor = 'center') {
+        const oldW = this.width, oldH = this.height;
+        this.width = Math.max(1, Math.min(30000, newWidth));
+        this.height = Math.max(1, Math.min(30000, newHeight));
+
+        let dx = 0, dy = 0;
+        switch (anchor) {
+            case 'center':
+                dx = Math.round((this.width - oldW) / 2);
+                dy = Math.round((this.height - oldH) / 2);
+                break;
+            case 'top-left':
+                dx = 0; dy = 0;
+                break;
+            case 'top-right':
+                dx = this.width - oldW; dy = 0;
+                break;
+            case 'bottom-left':
+                dx = 0; dy = this.height - oldH;
+                break;
+            case 'bottom-right':
+                dx = this.width - oldW; dy = this.height - oldH;
+                break;
+        }
+
+        for (const layer of this.layers) {
+            layer.x += dx;
+            layer.y += dy;
+        }
+
+        if (this.canvas) {
+            this.canvas.width = this.width;
+            this.canvas.height = this.height;
+        }
+        if (this.overlay) {
+            this.overlay.width = this.width;
+            this.overlay.height = this.height;
+        }
+
+        this.recordHistory('Canvas Size');
+        this.render();
+        this.notifyUI();
+    }
+
+    resizeImage(newWidth, newHeight) {
+        const scaleX = newWidth / this.width;
+        const scaleY = newHeight / this.height;
+
+        this.width = Math.max(1, Math.min(30000, newWidth));
+        this.height = Math.max(1, Math.min(30000, newHeight));
+
+        for (const layer of this.layers) {
+            layer.x = Math.round(layer.x * scaleX);
+            layer.y = Math.round(layer.y * scaleY);
+            const newLayerW = Math.max(1, Math.round(layer.width * scaleX));
+            const newLayerH = Math.max(1, Math.round(layer.height * scaleY));
+
+            const newCanvas = this.createCanvas(newLayerW, newLayerH);
+            const newCtx = newCanvas.getContext('2d');
+            newCtx.drawImage(layer.canvas, 0, 0, newLayerW, newLayerH);
+            layer.canvas = newCanvas;
+            layer.ctx = newCtx;
+            layer.width = newLayerW;
+            layer.height = newLayerH;
+
+            if (layer.hasMask && layer.maskCanvas) {
+                const newMask = this.createCanvas(newLayerW, newLayerH);
+                const newMaskCtx = newMask.getContext('2d');
+                newMaskCtx.drawImage(layer.maskCanvas, 0, 0, newLayerW, newLayerH);
+                layer.maskCanvas = newMask;
+                layer.maskCtx = newMaskCtx;
+            }
+        }
+
+        if (this.canvas) {
+            this.canvas.width = this.width;
+            this.canvas.height = this.height;
+        }
+        if (this.overlay) {
+            this.overlay.width = this.width;
+            this.overlay.height = this.height;
+        }
+
+        this.recordHistory('Image Size');
+        this.render();
+        this.notifyUI();
+    }
+
+    crop(x, y, width, height) {
+        const clampedX = Math.max(0, Math.min(this.width, x));
+        const clampedY = Math.max(0, Math.min(this.height, y));
+        const clampedW = Math.max(1, Math.min(this.width - clampedX, width));
+        const clampedH = Math.max(1, Math.min(this.height - clampedY, height));
+
+        this.width = clampedW;
+        this.height = clampedH;
+
+        for (const layer of this.layers) {
+            layer.x -= clampedX;
+            layer.y -= clampedY;
+        }
+
+        if (this.canvas) {
+            this.canvas.width = this.width;
+            this.canvas.height = this.height;
+        }
+        if (this.overlay) {
+            this.overlay.width = this.width;
+            this.overlay.height = this.height;
+        }
+
+        this.cropBox = null;
+        this.recordHistory('Crop');
+        this.render();
+        this.notifyUI();
+    }
+
+    applyCurves(curveTable, channel = 'rgb') {
+        const layer = this.getActiveLayer();
+        if (!layer) return;
+        const imgData = layer.ctx.getImageData(0, 0, layer.width, layer.height);
+        const data = imgData.data;
+
+        for (let i = 0; i < data.length; i += 4) {
+            if (data[i + 3] === 0) continue;
+            if (channel === 'rgb' || channel === 'red') data[i] = curveTable[data[i]];
+            if (channel === 'rgb' || channel === 'green') data[i + 1] = curveTable[data[i + 1]];
+            if (channel === 'rgb' || channel === 'blue') data[i + 2] = curveTable[data[i + 2]];
+        }
+
+        layer.ctx.putImageData(imgData, 0, 0);
+        this.recordHistory('Curves');
+        this.render();
+    }
+
+    applyExposure(exposure = 0, offset = 0, gamma = 1.0) {
+        const layer = this.getActiveLayer();
+        if (!layer) return;
+        const imgData = layer.ctx.getImageData(0, 0, layer.width, layer.height);
+        const data = imgData.data;
+        const scale = Math.pow(2, exposure);
+        const invGamma = 1.0 / Math.max(0.01, gamma);
+
+        const lut = new Uint8Array(256);
+        for (let i = 0; i < 256; i++) {
+            let v = (i / 255.0) * scale + (offset / 255.0);
+            v = Math.max(0, Math.min(1, v));
+            v = Math.pow(v, invGamma);
+            lut[i] = Math.round(v * 255);
+        }
+
+        for (let i = 0; i < data.length; i += 4) {
+            if (data[i + 3] === 0) continue;
+            data[i] = lut[data[i]];
+            data[i + 1] = lut[data[i + 1]];
+            data[i + 2] = lut[data[i + 2]];
+        }
+
+        layer.ctx.putImageData(imgData, 0, 0);
+        this.recordHistory('Exposure');
+        this.render();
+    }
+
+    applyGradientMap(gradientTable) {
+        const layer = this.getActiveLayer();
+        if (!layer) return;
+        const imgData = layer.ctx.getImageData(0, 0, layer.width, layer.height);
+        const data = imgData.data;
+
+        // Matching AdjustPixels.c: level = (2126*r + 7152*g + 722*b + 5000) / 10000
+        for (let i = 0; i < data.length; i += 4) {
+            const a = data[i + 3];
+            if (a === 0) continue;
+            const r = data[i], g = data[i + 1], b = data[i + 2];
+            const level = Math.min(255, Math.floor((2126 * r + 7152 * g + 722 * b + 5000) / 10000));
+            const color = gradientTable[level]; // { r, g, b }
+            data[i] = color.r;
+            data[i + 1] = color.g;
+            data[i + 2] = color.b;
+        }
+
+        layer.ctx.putImageData(imgData, 0, 0);
+        this.recordHistory('Gradient Map');
+        this.render();
+    }
+
+    static createHeadless(width = 800, height = 600) {
+        const dummyCanvas = {
+            width,
+            height,
+            getContext: () => ({
+                clearRect: () => {},
+                save: () => {},
+                restore: () => {},
+                translate: () => {},
+                rotate: () => {},
+                scale: () => {},
+                drawImage: () => {}
+            })
+        };
+        const dummyOverlay = {
+            width,
+            height,
+            getContext: () => ({
+                clearRect: () => {},
+                save: () => {},
+                restore: () => {},
+                beginPath: () => {},
+                stroke: () => {},
+                fillRect: () => {},
+                strokeRect: () => {}
+            })
+        };
+        const eng = new CompositorEngine(dummyCanvas, dummyOverlay);
+        eng.width = width;
+        eng.height = height;
+        return eng;
     }
 }
 
 if (typeof module !== 'undefined') {
     module.exports = CompositorEngine;
 }
+
