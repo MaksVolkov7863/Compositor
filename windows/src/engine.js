@@ -41,7 +41,7 @@ if (typeof window === 'undefined') {
     globalThis.window = { innerWidth: 1920, innerHeight: 1080 };
 }
 if (typeof requestAnimationFrame === 'undefined') {
-    globalThis.requestAnimationFrame = (fn) => setTimeout(fn, 16);
+    globalThis.requestAnimationFrame = () => {};
 }
 if (typeof Path2D === 'undefined') {
     globalThis.Path2D = class {
@@ -526,14 +526,19 @@ class CompositorEngine {
     }
 
     startMarchingAntsLoop() {
+        if (this.isHeadless || typeof window === 'undefined' || typeof process !== 'undefined') return;
         const loop = () => {
             if (this.selection) {
                 this.selectionOffset = (this.selectionOffset + 0.5) % 8;
                 this.renderOverlay();
             }
-            requestAnimationFrame(loop);
+            if (typeof requestAnimationFrame === 'function') {
+                requestAnimationFrame(loop);
+            }
         };
-        requestAnimationFrame(loop);
+        if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(loop);
+        }
     }
 
     // --- Interactive Tool Handlers ---
