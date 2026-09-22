@@ -3,35 +3,340 @@
  * Comprehensive Canvas, Layer, Tool, Adjustment & Selection Pipeline
  */
 
-// Headless polyfills for automated Node.js CI testing
+// Headless mock canvas implementation for Node.js CI test automation
+function createMockCanvas(w, h) {
+    w = Math.max(1, Math.round(w || 1));
+    h = Math.max(1, Math.round(h || 1));
+    const bufW = Math.min(w, 4096);
+    const bufH = Math.min(h, 4096);
+    const buffer = new Uint8ClampedArray(bufW * bufH * 4);
+
+    const parseColor = (str) => {
+        if (!str) return { r: 255, g: 255, b: 255, a: 255 };
+        if (typeof str === 'object' && str !== null) {
+            if (str.stops && str.stops.length > 0) {
+                return parseColor(str.stops[0].color);
+            }
+            return { r: 255, g: 255, b: 255, a: 255 };
+        }
+        if (typeof str !== 'string') return { r: 255, g: 255, b: 255, a: 255 };
+        str = str.trim().toLowerCase();
+        const namedColors = {
+            black: { r: 0, g: 0, b: 0, a: 255 },
+            white: { r: 255, g: 255, b: 255, a: 255 },
+            transparent: { r: 0, g: 0, b: 0, a: 0 },
+            red: { r: 255, g: 0, b: 0, a: 255 },
+            green: { r: 0, g: 255, b: 0, a: 255 },
+            blue: { r: 0, g: 0, b: 255, a: 255 },
+            yellow: { r: 255, g: 255, b: 0, a: 255 },
+            cyan: { r: 0, g: 255, b: 255, a: 255 },
+            magenta: { r: 255, g: 0, b: 255, a: 255 }
+        };
+        if (namedColors[str]) return { ...namedColors[str] };
+        if (str.startsWith('#')) {
+            let hex = str.slice(1);
+            if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+            if (hex.length === 6) {
+                const num = parseInt(hex, 16);
+                return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255, a: 255 };
+            } else if (hex.length === 8) {
+                const num = parseInt(hex, 16);
+                return { r: (num >> 24) & 255, g: (num >> 16) & 255, b: (num >> 8) & 255, a: num & 255 };
+            }
+        }
+        const m = str.match(/rgba?\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\)/);
+        if (m) {
+            return {
+                r: parseInt(m[1]),
+                g: parseInt(m[2]),
+                b: parseInt(m[3]),
+                a: m[4] !== undefined ? Math.round(parseFloat(m[4]) * 255) : 255
+            };
+        }
+        return { r: 255, g: 255, b: 255, a: 255 };
+    };
+
+    let currentPath = null;
+    const ctxObj = {
+        fillStyle: '#000000',
+        strokeStyle: '#000000',
+        globalAlpha: 1.0,
+        globalCompositeOperation: 'source-over',
+        filter: 'none',
+        font: '16px Segoe UI',
+        textAlign: 'left',
+        textBaseline: 'top',
+        lineWidth: 1,
+        lineDashOffset: 0,
+
+        save: () => {},
+        restore: () => {},
+        translate: () => {},
+        rotate: () => {},
+        scale: () => {},
+        setLineDash: () => {},
+
+        fillRect: (x, y, rw, rh) => {
+            let rx = Math.floor(x);
+            let ry = Math.floor(y);
+            let rwidth = Math.ceil(rw);
+            let rheight = Math.ceil(rh);
+            if (rwidth < 0) { rx += rwidth; rwidth = -rwidth; }
+            if (rheight < 0) { ry += rheight; rheight = -rheight; }
+
+            const col = parseColor(ctxObj.fillStyle);
+            const alpha = Math.round(col.a * ctxObj.globalAlpha);
+
+            for (let py = Math.max(0, ry); py < Math.min(bufH, ry + rheight); py++) {
+                for (let px = Math.max(0, rx); px < Math.min(bufW, rx + rwidth); px++) {
+                    const idx = (py * bufW + px) * 4;
+                    if (ctxObj.globalCompositeOperation === 'destination-out') {
+                        const factor = 1 - (col.a / 255) * ctxObj.globalAlpha;
+                        buffer[idx + 3] = Math.round(buffer[idx + 3] * factor);
+                    } else {
+                        buffer[idx] = col.r;
+                        buffer[idx + 1] = col.g;
+                        buffer[idx + 2] = col.b;
+                        buffer[idx + 3] = alpha;
+                    }
+                }
+            }
+        },
+
+        clearRect: (x, y, rw, rh) => {
+            let rx = Math.floor(x);
+            let ry = Math.floor(y);
+            let rwidth = Math.ceil(rw);
+            let rheight = Math.ceil(rh);
+            if (rwidth < 0) { rx += rwidth; rwidth = -rwidth; }
+            if (rheight < 0) { ry += rheight; rheight = -rheight; }
+
+            for (let py = Math.max(0, ry); py < Math.min(bufH, ry + rheight); py++) {
+                for (let px = Math.max(0, rx); px < Math.min(bufW, rx + rwidth); px++) {
+                    const idx = (py * bufW + px) * 4;
+                    buffer[idx] = 0; buffer[idx + 1] = 0; buffer[idx + 2] = 0; buffer[idx + 3] = 0;
+                }
+            }
+        },
+
+        beginPath: () => { currentPath = null; },
+        rect: (x, y, rw, rh) => { currentPath = { type: 'rect', x, y, rw, rh }; },
+        roundRect: (x, y, rw, rh, rad = 0) => { currentPath = { type: 'roundRect', x, y, rw, rh, rad }; },
+        ellipse: (cx, cy, rx, ry) => { currentPath = { type: 'ellipse', cx, cy, rx, ry }; },
+        arc: (cx, cy, r) => { currentPath = { type: 'ellipse', cx, cy, rx: r, ry: r }; },
+        moveTo: () => {},
+        lineTo: () => {},
+        closePath: () => {},
+
+        fill: () => {
+            if (!currentPath) return;
+            const col = parseColor(ctxObj.fillStyle);
+            const alpha = Math.round(col.a * ctxObj.globalAlpha);
+            const isDestOut = ctxObj.globalCompositeOperation === 'destination-out';
+
+            if (currentPath.type === 'rect') {
+                ctxObj.fillRect(currentPath.x, currentPath.y, currentPath.rw, currentPath.rh);
+            } else if (currentPath.type === 'roundRect') {
+                const { x, y, rw, rh, rad } = currentPath;
+                const r = Math.min(rad, Math.min(rw, rh) / 2);
+                for (let py = Math.max(0, Math.floor(y)); py < Math.min(bufH, Math.ceil(y + rh)); py++) {
+                    for (let px = Math.max(0, Math.floor(x)); px < Math.min(bufW, Math.ceil(x + rw)); px++) {
+                        let inCorner = false;
+                        let cornerDx = 0, cornerDy = 0;
+                        if (px < x + r && py < y + r) { inCorner = true; cornerDx = px - (x + r); cornerDy = py - (y + r); }
+                        else if (px > x + rw - r && py < y + r) { inCorner = true; cornerDx = px - (x + rw - r); cornerDy = py - (y + r); }
+                        else if (px < x + r && py > y + rh - r) { inCorner = true; cornerDx = px - (x + r); cornerDy = py - (y + rh - r); }
+                        else if (px > x + rw - r && py > y + rh - r) { inCorner = true; cornerDx = px - (x + rw - r); cornerDy = py - (y + rh - r); }
+
+                        if (inCorner && (cornerDx * cornerDx + cornerDy * cornerDy > r * r)) {
+                            continue;
+                        }
+                        const idx = (py * bufW + px) * 4;
+                        if (isDestOut) {
+                            buffer[idx + 3] = Math.round(buffer[idx + 3] * (1 - alpha / 255));
+                        } else {
+                            buffer[idx] = col.r; buffer[idx + 1] = col.g; buffer[idx + 2] = col.b; buffer[idx + 3] = alpha;
+                        }
+                    }
+                }
+            } else if (currentPath.type === 'ellipse') {
+                const { cx, cy, rx, ry } = currentPath;
+                for (let py = Math.max(0, Math.floor(cy - ry)); py <= Math.min(bufH - 1, Math.ceil(cy + ry)); py++) {
+                    for (let px = Math.max(0, Math.floor(cx - rx)); px <= Math.min(bufW - 1, Math.ceil(cx + rx)); px++) {
+                        const normX = (px - cx) / Math.max(1, rx);
+                        const normY = (py - cy) / Math.max(1, ry);
+                        if (normX * normX + normY * normY <= 1.0) {
+                            const idx = (py * bufW + px) * 4;
+                            if (isDestOut) {
+                                buffer[idx + 3] = Math.round(buffer[idx + 3] * (1 - alpha / 255));
+                            } else {
+                                buffer[idx] = col.r; buffer[idx + 1] = col.g; buffer[idx + 2] = col.b; buffer[idx + 3] = alpha;
+                            }
+                        }
+                    }
+                }
+            }
+        },
+
+        stroke: () => {
+            if (!currentPath) return;
+            const col = parseColor(ctxObj.strokeStyle);
+            const alpha = Math.round(col.a * ctxObj.globalAlpha);
+            if (currentPath.type === 'rect') {
+                const { x, y, rw, rh } = currentPath;
+                const lw = Math.max(1, Math.round(ctxObj.lineWidth || 1));
+                ctxObj.fillRect(x, y, rw, lw);
+                ctxObj.fillRect(x, y + rh - lw, rw, lw);
+                ctxObj.fillRect(x, y, lw, rh);
+                ctxObj.fillRect(x + rw - lw, y, lw, rh);
+            }
+        },
+
+        clip: () => {},
+
+        fillText: (text, x, y) => {
+            const col = parseColor(ctxObj.fillStyle);
+            const alpha = Math.round(col.a * ctxObj.globalAlpha);
+            const tw = Math.max(10, Math.min(bufW - x, (text ? text.length : 1) * 12));
+            const th = 16;
+            for (let py = Math.max(0, Math.floor(y)); py < Math.min(bufH, Math.ceil(y + th)); py++) {
+                for (let px = Math.max(0, Math.floor(x)); px < Math.min(bufW, Math.ceil(x + tw)); px++) {
+                    const idx = (py * bufW + px) * 4;
+                    buffer[idx] = col.r; buffer[idx + 1] = col.g; buffer[idx + 2] = col.b; buffer[idx + 3] = alpha;
+                }
+            }
+        },
+
+        strokeText: () => {},
+        measureText: (text) => ({ width: (text ? text.length : 0) * 12, actualBoundingBoxAscent: 12, actualBoundingBoxDescent: 4 }),
+
+        createLinearGradient: () => {
+            const stops = [];
+            return {
+                stops,
+                addColorStop: (pos, color) => { stops.push({ pos, color }); }
+            };
+        },
+
+        createRadialGradient: () => {
+            const stops = [];
+            return {
+                stops,
+                addColorStop: (pos, color) => { stops.push({ pos, color }); }
+            };
+        },
+
+        getImageData: (x = 0, y = 0, gw = w, gh = h) => {
+            const sub = new Uint8ClampedArray(gw * gh * 4);
+            for (let py = 0; py < gh; py++) {
+                for (let px = 0; px < gw; px++) {
+                    const srcX = x + px;
+                    const srcY = y + py;
+                    const dstIdx = (py * gw + px) * 4;
+                    if (srcX >= 0 && srcX < bufW && srcY >= 0 && srcY < bufH) {
+                        const srcIdx = (srcY * bufW + srcX) * 4;
+                        sub[dstIdx] = buffer[srcIdx];
+                        sub[dstIdx + 1] = buffer[srcIdx + 1];
+                        sub[dstIdx + 2] = buffer[srcIdx + 2];
+                        sub[dstIdx + 3] = buffer[srcIdx + 3];
+                    }
+                }
+            }
+            return { data: sub, width: gw, height: gh };
+        },
+
+        putImageData: (imgData, x = 0, y = 0) => {
+            if (!imgData || !imgData.data) return;
+            const iw = imgData.width || 0;
+            const ih = imgData.height || 0;
+            for (let py = 0; py < ih; py++) {
+                for (let px = 0; px < iw; px++) {
+                    const dstX = x + px;
+                    const dstY = y + py;
+                    if (dstX >= 0 && dstX < bufW && dstY >= 0 && dstY < bufH) {
+                        const srcIdx = (py * iw + px) * 4;
+                        const dstIdx = (dstY * bufW + dstX) * 4;
+                        buffer[dstIdx] = imgData.data[srcIdx];
+                        buffer[dstIdx + 1] = imgData.data[srcIdx + 1];
+                        buffer[dstIdx + 2] = imgData.data[srcIdx + 2];
+                        buffer[dstIdx + 3] = imgData.data[srcIdx + 3];
+                    }
+                }
+            }
+        },
+
+        drawImage: (src, ...args) => {
+            if (!src) return;
+            let sdata = null, sw = 0, sh = 0;
+            if (src.getContext) {
+                const sctx = src.getContext('2d');
+                sw = src.width;
+                sh = src.height;
+                sdata = sctx.getImageData(0, 0, sw, sh).data;
+            } else if (src.data) {
+                sw = src.width;
+                sh = src.height;
+                sdata = src.data;
+            }
+            if (!sdata) return;
+
+            let dx = 0, dy = 0, dw = sw, dh = sh;
+            if (args.length === 2) {
+                [dx, dy] = args;
+            } else if (args.length === 4) {
+                [dx, dy, dw, dh] = args;
+            } else if (args.length >= 8) {
+                dx = args[4]; dy = args[5]; dw = args[6]; dh = args[7];
+            }
+
+            const isDestIn = ctxObj.globalCompositeOperation === 'destination-in';
+            const isDestOut = ctxObj.globalCompositeOperation === 'destination-out';
+            const alpha = ctxObj.globalAlpha !== undefined ? ctxObj.globalAlpha : 1.0;
+
+            for (let py = 0; py < dh; py++) {
+                for (let px = 0; px < dw; px++) {
+                    const dstX = Math.floor(dx + px);
+                    const dstY = Math.floor(dy + py);
+                    if (dstX < 0 || dstX >= bufW || dstY < 0 || dstY >= bufH) continue;
+
+                    const srcX = Math.floor((px / dw) * sw);
+                    const srcY = Math.floor((py / dh) * sh);
+                    if (srcX < 0 || srcX >= sw || srcY < 0 || srcY >= sh) continue;
+
+                    const sIdx = (srcY * sw + srcX) * 4;
+                    const dIdx = (dstY * bufW + dstX) * 4;
+
+                    if (isDestIn) {
+                        const srcAlpha = (sdata[sIdx + 3] / 255) * (sdata[sIdx] / 255) * alpha;
+                        buffer[dIdx + 3] = Math.round(buffer[dIdx + 3] * srcAlpha);
+                    } else if (isDestOut) {
+                        const srcAlpha = (sdata[sIdx + 3] / 255) * alpha;
+                        buffer[dIdx + 3] = Math.round(buffer[dIdx + 3] * (1 - srcAlpha));
+                    } else {
+                        buffer[dIdx] = sdata[sIdx];
+                        buffer[dIdx + 1] = sdata[sIdx + 1];
+                        buffer[dIdx + 2] = sdata[sIdx + 2];
+                        buffer[dIdx + 3] = Math.round(sdata[sIdx + 3] * alpha);
+                    }
+                }
+            }
+        }
+    };
+
+    return {
+        width: w,
+        height: h,
+        getContext: () => ctxObj,
+        toDataURL: (format = 'image/png') => `data:${format};base64,mock`,
+        toBlob: (cb, type = 'image/png') => { if (cb) cb({ size: buffer.length, type }); }
+    };
+}
+
 if (typeof document === 'undefined') {
     globalThis.document = {
         createElement: (tag) => {
             if (tag === 'canvas') {
-                const w = 800, h = 600;
-                const buffer = new Uint8ClampedArray(w * h * 4);
-                return {
-                    width: w,
-                    height: h,
-                    getContext: () => ({
-                        fillStyle: '#000000',
-                        strokeStyle: '#000000',
-                        globalAlpha: 1.0,
-                        globalCompositeOperation: 'source-over',
-                        filter: 'none',
-                        fillRect: () => {},
-                        clearRect: () => {},
-                        drawImage: () => {},
-                        getImageData: (x, y, gw, gh) => ({ data: new Uint8ClampedArray(gw * gh * 4), width: gw, height: gh }),
-                        putImageData: () => {},
-                        save: () => {},
-                        restore: () => {},
-                        beginPath: () => {},
-                        fill: () => {},
-                        stroke: () => {}
-                    }),
-                    toDataURL: () => 'data:image/png;base64,mock'
-                };
+                return createMockCanvas(800, 600);
             }
             return {};
         }
@@ -148,8 +453,8 @@ class CompositorEngine {
     // --- Document & Layers ---
 
     newCanvas(width, height, background = '#ffffff') {
-        this.width = Math.max(10, Math.min(width, 10000));
-        this.height = Math.max(10, Math.min(height, 10000));
+        this.width = Math.max(1, Math.min(width, 50000));
+        this.height = Math.max(1, Math.min(height, 50000));
         this.layers = [];
         this.selection = null;
         this.history = [];
@@ -1085,6 +1390,84 @@ class CompositorEngine {
         return { red, green, blue, lum };
     }
 
+    rgbToHsl(r, g, b) {
+        r /= 255;
+        g /= 255;
+        b /= 255;
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        let h = 0;
+        let s = 0;
+        const l = (max + min) / 2;
+
+        if (max !== min) {
+            const d = max - min;
+            s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+            switch (max) {
+                case r: h = ((g - b) / d + (g < b ? 6 : 0)); break;
+                case g: h = ((b - r) / d + 2); break;
+                case b: h = ((r - g) / d + 4); break;
+            }
+            h *= 60;
+        }
+
+        return {
+            h: Math.round(h),
+            s: Math.round(s * 100),
+            l: Math.round(l * 100)
+        };
+    }
+
+    hslToRgb(h, s, l) {
+        h = ((h % 360) + 360) % 360;
+        s = Math.max(0, Math.min(100, s)) / 100;
+        l = Math.max(0, Math.min(100, l)) / 100;
+
+        const c = (1 - Math.abs(2 * l - 1)) * s;
+        const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+        const m = l - c / 2;
+        let r1 = 0, g1 = 0, b1 = 0;
+
+        if (h >= 0 && h < 60) {
+            r1 = c; g1 = x; b1 = 0;
+        } else if (h >= 60 && h < 120) {
+            r1 = x; g1 = c; b1 = 0;
+        } else if (h >= 120 && h < 180) {
+            r1 = 0; g1 = c; b1 = x;
+        } else if (h >= 180 && h < 240) {
+            r1 = 0; g1 = x; b1 = c;
+        } else if (h >= 240 && h < 300) {
+            r1 = x; g1 = 0; b1 = c;
+        } else {
+            r1 = c; g1 = 0; b1 = x;
+        }
+
+        return {
+            r: Math.round((r1 + m) * 255),
+            g: Math.round((g1 + m) * 255),
+            b: Math.round((b1 + m) * 255)
+        };
+    }
+
+    hexToRgb(hex) {
+        if (!hex || typeof hex !== 'string') return { r: 0, g: 0, b: 0 };
+        hex = hex.trim();
+        if (hex.startsWith('#')) hex = hex.slice(1);
+        if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+        const num = parseInt(hex, 16);
+        if (isNaN(num)) return { r: 0, g: 0, b: 0 };
+        return {
+            r: (num >> 16) & 255,
+            g: (num >> 8) & 255,
+            b: num & 255
+        };
+    }
+
+    rgbToHex(r, g, b) {
+        const toHex = c => Math.max(0, Math.min(255, Math.round(c))).toString(16).padStart(2, '0');
+        return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+    }
+
     applyHueSaturation(hueShift = 0, satShift = 0, lightShift = 0) {
         const layer = this.getActiveLayer();
         if (!layer) return;
@@ -1291,6 +1674,8 @@ class CompositorEngine {
         const snapshot = {
             name,
             activeLayerId: this.activeLayerId,
+            width: this.width,
+            height: this.height,
             layers: this.layers.map(l => {
                 const copyCanvas = this.createCanvas(l.width, l.height);
                 copyCanvas.width = l.width;
@@ -1352,6 +1737,16 @@ class CompositorEngine {
 
     restoreSnapshot(snapshot) {
         this.activeLayerId = snapshot.activeLayerId;
+        if (snapshot.width) this.width = snapshot.width;
+        if (snapshot.height) this.height = snapshot.height;
+        if (this.canvas) {
+            this.canvas.width = this.width;
+            this.canvas.height = this.height;
+        }
+        if (this.overlay) {
+            this.overlay.width = this.width;
+            this.overlay.height = this.height;
+        }
         this.layers = snapshot.layers.map(l => {
             const canvas = this.createCanvas(l.width, l.height);
             canvas.width = l.width;
@@ -1388,206 +1783,13 @@ class CompositorEngine {
     }
 
     createCanvas(w, h) {
-        if (typeof document !== 'undefined' && document.createElement) {
+        if (!this.isHeadless && typeof window !== 'undefined' && typeof HTMLCanvasElement !== 'undefined' && typeof document !== 'undefined' && document.createElement) {
             const canvas = document.createElement('canvas');
             canvas.width = w;
             canvas.height = h;
             return canvas;
-        } else {
-            // Headless mock canvas for automated testing
-            const buffer = new Uint8ClampedArray(w * h * 4);
-            const parseColor = (str) => {
-                if (!str || typeof str !== 'string') return { r: 255, g: 255, b: 255, a: 255 };
-                str = str.trim();
-                if (str.startsWith('#')) {
-                    let hex = str.slice(1);
-                    if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
-                    const num = parseInt(hex, 16);
-                    return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255, a: 255 };
-                }
-                const m = str.match(/rgba?\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\)/);
-                if (m) {
-                    return {
-                        r: parseInt(m[1]),
-                        g: parseInt(m[2]),
-                        b: parseInt(m[3]),
-                        a: m[4] !== undefined ? Math.round(parseFloat(m[4]) * 255) : 255
-                    };
-                }
-                return { r: 255, g: 255, b: 255, a: 255 };
-            };
-
-            let currentPath = null;
-            const ctxObj = {
-                fillStyle: '#ffffff',
-                strokeStyle: '#000000',
-                globalAlpha: 1.0,
-                globalCompositeOperation: 'source-over',
-                filter: 'none',
-                font: '16px Segoe UI',
-                textAlign: 'left',
-                textBaseline: 'top',
-                lineWidth: 1,
-
-                fillRect: (x, y, rw, rh) => {
-                    const col = parseColor(ctxObj.fillStyle);
-                    const alpha = Math.round(col.a * ctxObj.globalAlpha);
-                    for (let py = Math.max(0, Math.floor(y)); py < Math.min(h, Math.ceil(y + rh)); py++) {
-                        for (let px = Math.max(0, Math.floor(x)); px < Math.min(w, Math.ceil(x + rw)); px++) {
-                            const idx = (py * w + px) * 4;
-                            buffer[idx] = col.r;
-                            buffer[idx + 1] = col.g;
-                            buffer[idx + 2] = col.b;
-                            buffer[idx + 3] = alpha;
-                        }
-                    }
-                },
-                clearRect: (x, y, rw, rh) => {
-                    for (let py = Math.max(0, Math.floor(y)); py < Math.min(h, Math.ceil(y + rh)); py++) {
-                        for (let px = Math.max(0, Math.floor(x)); px < Math.min(w, Math.ceil(x + rw)); px++) {
-                            const idx = (py * w + px) * 4;
-                            buffer[idx] = 0; buffer[idx + 1] = 0; buffer[idx + 2] = 0; buffer[idx + 3] = 0;
-                        }
-                    }
-                },
-                beginPath: () => {
-                    currentPath = [];
-                },
-                rect: (x, y, rw, rh) => {
-                    currentPath = { type: 'rect', x, y, rw, rh };
-                },
-                roundRect: (x, y, rw, rh, rad) => {
-                    currentPath = { type: 'roundRect', x, y, rw, rh, rad: rad || 0 };
-                },
-                ellipse: (cx, cy, rx, ry) => {
-                    currentPath = { type: 'ellipse', cx, cy, rx, ry };
-                },
-                arc: (cx, cy, r) => {
-                    currentPath = { type: 'ellipse', cx, cy, rx: r, ry: r };
-                },
-                fill: () => {
-                    if (!currentPath) return;
-                    const col = parseColor(ctxObj.fillStyle);
-                    const alpha = Math.round(col.a * ctxObj.globalAlpha);
-                    if (currentPath.type === 'rect') {
-                        ctxObj.fillRect(currentPath.x, currentPath.y, currentPath.rw, currentPath.rh);
-                    } else if (currentPath.type === 'roundRect') {
-                        const { x, y, rw, rh, rad } = currentPath;
-                        const r = Math.min(rad, Math.min(rw, rh) / 2);
-                        for (let py = Math.max(0, Math.floor(y)); py < Math.min(h, Math.ceil(y + rh)); py++) {
-                            for (let px = Math.max(0, Math.floor(x)); px < Math.min(w, Math.ceil(x + rw)); px++) {
-                                // Corner cut check
-                                let inCorner = false;
-                                let cornerDx = 0, cornerDy = 0;
-                                if (px < x + r && py < y + r) { inCorner = true; cornerDx = px - (x + r); cornerDy = py - (y + r); }
-                                else if (px > x + rw - r && py < y + r) { inCorner = true; cornerDx = px - (x + rw - r); cornerDy = py - (y + r); }
-                                else if (px < x + r && py > y + rh - r) { inCorner = true; cornerDx = px - (x + r); cornerDy = py - (y + rh - r); }
-                                else if (px > x + rw - r && py > y + rh - r) { inCorner = true; cornerDx = px - (x + rw - r); cornerDy = py - (y + rh - r); }
-
-                                if (inCorner && (cornerDx * cornerDx + cornerDy * cornerDy > r * r)) {
-                                    continue; // Cut outside rounded corner
-                                }
-                                const idx = (py * w + px) * 4;
-                                buffer[idx] = col.r; buffer[idx + 1] = col.g; buffer[idx + 2] = col.b; buffer[idx + 3] = alpha;
-                            }
-                        }
-                    } else if (currentPath.type === 'ellipse') {
-                        const { cx, cy, rx, ry } = currentPath;
-                        for (let py = Math.max(0, Math.floor(cy - ry)); py <= Math.min(h - 1, Math.ceil(cy + ry)); py++) {
-                            for (let px = Math.max(0, Math.floor(cx - rx)); px <= Math.min(w - 1, Math.ceil(cx + rx)); px++) {
-                                const normX = (px - cx) / Math.max(1, rx);
-                                const normY = (py - cy) / Math.max(1, ry);
-                                if (normX * normX + normY * normY <= 1.0) {
-                                    const idx = (py * w + px) * 4;
-                                    buffer[idx] = col.r; buffer[idx + 1] = col.g; buffer[idx + 2] = col.b; buffer[idx + 3] = alpha;
-                                }
-                            }
-                        }
-                    }
-                },
-                stroke: () => {},
-                clip: () => {},
-                fillText: (text, x, y) => {
-                    const col = parseColor(ctxObj.fillStyle);
-                    const alpha = Math.round(col.a * ctxObj.globalAlpha);
-                    const tw = Math.max(10, Math.min(w - x, (text ? text.length : 1) * 12));
-                    const th = 16;
-                    for (let py = Math.max(0, Math.floor(y)); py < Math.min(h, Math.ceil(y + th)); py++) {
-                        for (let px = Math.max(0, Math.floor(x)); px < Math.min(w, Math.ceil(x + tw)); px++) {
-                            const idx = (py * w + px) * 4;
-                            buffer[idx] = col.r; buffer[idx + 1] = col.g; buffer[idx + 2] = col.b; buffer[idx + 3] = alpha;
-                        }
-                    }
-                },
-                strokeText: () => {},
-                measureText: (text) => ({ width: (text ? text.length : 0) * 10 }),
-                createLinearGradient: () => ({ addColorStop: () => {} }),
-                createRadialGradient: () => ({ addColorStop: () => {} }),
-                getImageData: (x, y, gw, gh) => {
-                    const sub = new Uint8ClampedArray(gw * gh * 4);
-                    for (let py = 0; py < gh; py++) {
-                        for (let px = 0; px < gw; px++) {
-                            const srcIdx = ((y + py) * w + (x + px)) * 4;
-                            const dstIdx = (py * gw + px) * 4;
-                            if (srcIdx >= 0 && srcIdx < buffer.length) {
-                                sub[dstIdx] = buffer[srcIdx];
-                                sub[dstIdx + 1] = buffer[srcIdx + 1];
-                                sub[dstIdx + 2] = buffer[srcIdx + 2];
-                                sub[dstIdx + 3] = buffer[srcIdx + 3];
-                            }
-                        }
-                    }
-                    return { data: sub, width: gw, height: gh };
-                },
-                putImageData: (imgData, x, y) => {
-                    for (let py = 0; py < imgData.height; py++) {
-                        for (let px = 0; px < imgData.width; px++) {
-                            const srcIdx = (py * imgData.width + px) * 4;
-                            const dstIdx = ((y + py) * w + (x + px)) * 4;
-                            if (dstIdx >= 0 && dstIdx < buffer.length) {
-                                buffer[dstIdx] = imgData.data[srcIdx];
-                                buffer[dstIdx + 1] = imgData.data[srcIdx + 1];
-                                buffer[dstIdx + 2] = imgData.data[srcIdx + 2];
-                                buffer[dstIdx + 3] = imgData.data[srcIdx + 3];
-                            }
-                        }
-                    }
-                },
-                drawImage: (src, dx, dy, dw, dh) => {
-                    if (src && src.getContext) {
-                        const srcData = src.getContext().getImageData(0, 0, src.width, src.height);
-                        const targetW = dw || src.width;
-                        const targetH = dh || src.height;
-                        for (let py = 0; py < targetH; py++) {
-                            for (let px = 0; px < targetW; px++) {
-                                const srcX = Math.floor(px * src.width / targetW);
-                                const srcY = Math.floor(py * src.height / targetH);
-                                const sIdx = (srcY * src.width + srcX) * 4;
-                                const dIdx = ((dy + py) * w + (dx + px)) * 4;
-                                if (dIdx >= 0 && dIdx < buffer.length) {
-                                    buffer[dIdx] = srcData.data[sIdx];
-                                    buffer[dIdx + 1] = srcData.data[sIdx + 1];
-                                    buffer[dIdx + 2] = srcData.data[sIdx + 2];
-                                    buffer[dIdx + 3] = srcData.data[sIdx + 3];
-                                }
-                            }
-                        }
-                    }
-                },
-                save: () => {},
-                restore: () => {},
-                translate: () => {},
-                rotate: () => {},
-                scale: () => {}
-            };
-
-            return {
-                width: w,
-                height: h,
-                getContext: () => ctxObj,
-                toDataURL: (format = 'image/png') => `data:${format};base64,mock`
-            };
         }
+        return createMockCanvas(w, h);
     }
 
     // --- Extended Feature Parity Methods ---
@@ -2369,38 +2571,18 @@ class CompositorEngine {
     }
 
     static createHeadless(width = 800, height = 600) {
-        const dummyCanvas = {
-            width,
-            height,
-            getContext: () => ({
-                clearRect: () => {},
-                save: () => {},
-                restore: () => {},
-                translate: () => {},
-                rotate: () => {},
-                scale: () => {},
-                drawImage: () => {}
-            })
-        };
-        const dummyOverlay = {
-            width,
-            height,
-            getContext: () => ({
-                clearRect: () => {},
-                save: () => {},
-                restore: () => {},
-                beginPath: () => {},
-                stroke: () => {},
-                fillRect: () => {},
-                strokeRect: () => {}
-            })
-        };
+        const dummyCanvas = createMockCanvas(width, height);
+        const dummyOverlay = createMockCanvas(width, height);
         const eng = new CompositorEngine(dummyCanvas, dummyOverlay);
+        eng.isHeadless = true;
+        eng.newCanvas(width, height, 'transparent');
         eng.width = width;
         eng.height = height;
         return eng;
     }
 }
+
+CompositorEngine.createMockCanvas = createMockCanvas;
 
 if (typeof module !== 'undefined') {
     module.exports = CompositorEngine;

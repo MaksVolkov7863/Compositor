@@ -73,7 +73,7 @@ describe('Blend Modes & Shortcut Cycling Pipeline', () => {
 
         // Screen: 255 - ((255 - s) * (255 - d)) / 255
         const screen = (s, d) => 255 - Math.round(((255 - s) * (255 - d)) / 255);
-        assert.equal(screen(128, 128), 191);
+        assert.equal(screen(128, 128), 192);
         assert.equal(screen(0, 128), 128);
         assert.equal(screen(255, 128), 255);
 
