@@ -66,16 +66,17 @@ Because it’s open source, you can download the Xcode project and add, remove, 
 - Open `Compositor.xcodeproj` and run the **Compositor** scheme.
 - Release DMG build script available in `scripts/release.sh`.
 
-### Windows (Compositor for Windows)
-A dedicated desktop version with full feature parity for Windows 10 and 11, located in `windows/`:
-- **Automated CI/CD Builds**: Built on GitHub Actions on every push to `main` and tagged releases (`v*`). Ready-to-run setup installers (`.exe`) and portable executables are generated and downloadable from GitHub Actions Artifacts and Releases.
+### Windows (Compositor for Windows - Community Edition)
+A standalone desktop version with full feature parity for Windows 10 and 11, maintained by [@MaksVolkov7863](https://github.com/MaksVolkov7863):
+- **Cross-Platform Compatibility**: Full support for `.comp` project files up to **Manifest Version 9** (including backward compatibility with versions 1–8). Projects saved on macOS open seamlessly in the Windows edition and vice versa.
+- **Automated CI/CD Builds**: Continuous builds on GitHub Actions on every push to `main` and tagged releases (`v*`). Ready-to-run setup installers (`.exe`) and portable executables are available from [Releases](https://github.com/MaksVolkov7863/Compositor/releases) and Artifacts.
 - **Local Development**:
   ```bash
   cd windows
   npm install
   npm start
   ```
-- **Local Packaging (Windows .exe installer & portable)**:
+- **Packaging (Windows .exe installer & portable)**:
   ```bash
   cd windows
   npm run dist

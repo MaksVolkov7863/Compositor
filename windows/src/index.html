@@ -979,6 +979,9 @@
             engine.height = project.height;
             engine.resolution = project.resolution;
             engine.layers = project.layers;
+            if (project.guides) {
+                engine.guides = project.guides;
+            }
             engine.activeLayerId = project.activeLayerId || project.layers[0]?.id;
             engine.canvas.width = project.width;
             engine.canvas.height = project.height;
@@ -995,6 +998,7 @@
                 height: engine.height,
                 resolution: engine.resolution,
                 activeLayerId: engine.activeLayerId,
+                guides: engine.guides,
                 layers: engine.layers
             }, window.JSZip);
 

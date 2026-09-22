@@ -20,7 +20,7 @@
     "windows",
     "graphics"
   ],
-  "author": "Robbie Tilton / MaksVolkov7863",
+  "author": "MaksVolkov7863",
   "license": "MIT",
   "devDependencies": {
     "electron": "^33.2.1",

@@ -1,6 +1,6 @@
 /**
  * Compositor Project (.comp) Serialization & Image Export/Import
- * Matches manifest v1-v6 specification from docs/project-format.md
+ * Matches manifest specification from docs/project-format.md (versions 1–9)
  */
 
 class ProjectStore {
@@ -13,6 +13,7 @@ class ProjectStore {
 
     /**
      * Packs the current project state into a .comp package (ZIP format)
+     * Writes Manifest version 9.
      */
     static async serializeProject(project, JSZip) {
         const zip = new JSZip();
@@ -20,7 +21,8 @@ class ProjectStore {
 
         const manifest = {
             format: "com.compositor.project",
-            version: 6,
+            version: 9,
+            colorSpace: "sRGB",
             uuid: project.uuid || this.generateUUID(),
             dimensions: {
                 width: project.width,
@@ -31,11 +33,34 @@ class ProjectStore {
             layers: []
         };
 
+        // Serialize guides (CanvasGuide array format or object)
+        if (project.guides) {
+            manifest.guides = [];
+            if (Array.isArray(project.guides)) {
+                manifest.guides = project.guides.map(g => ({
+                    id: g.id || this.generateUUID(),
+                    axis: g.axis,
+                    position: g.position
+                }));
+            } else if (typeof project.guides === 'object') {
+                if (Array.isArray(project.guides.horizontal)) {
+                    for (const pos of project.guides.horizontal) {
+                        manifest.guides.push({ id: this.generateUUID(), axis: 'horizontal', position: pos });
+                    }
+                }
+                if (Array.isArray(project.guides.vertical)) {
+                    for (const pos of project.guides.vertical) {
+                        manifest.guides.push({ id: this.generateUUID(), axis: 'vertical', position: pos });
+                    }
+                }
+            }
+        }
+
         for (const layer of project.layers) {
             const layerRecord = {
                 uuid: layer.id,
                 name: layer.name,
-                visible: layer.visible,
+                visible: layer.visible !== false,
                 opacity: layer.opacity !== undefined ? layer.opacity : 1.0,
                 blendMode: layer.blendMode || "Normal",
                 transform: {
@@ -57,6 +82,38 @@ class ProjectStore {
             }
             if (layer.maskSourceId) {
                 layerRecord.maskSourceID = layer.maskSourceId;
+            }
+
+            // Adjustment layers (manifest v7+)
+            if (layer.adjustment) {
+                layerRecord.adjustment = layer.adjustment;
+            }
+
+            // Editable Vector Shape metadata
+            if (layer.shape || layer.shapeType) {
+                layerRecord.shape = layer.shape || {
+                    kind: layer.shapeType || 'rectangle',
+                    cornerRadius: layer.shapeCornerRadius || 0
+                };
+            }
+
+            // Editable Text metadata
+            if (layer.liveText || layer.text) {
+                const textObj = layer.liveText || layer.text;
+                layerRecord.text = {
+                    content: textObj.content || textObj.text || 'Text',
+                    fontName: textObj.font || textObj.fontName || 'Segoe UI',
+                    fontSize: textObj.fontSize || 48,
+                    alignment: textObj.alignment || 'left',
+                    tracking: textObj.tracking || 0,
+                    leading: textObj.leading || 0,
+                    boxSize: textObj.boxSize || null
+                };
+            }
+
+            // Layer Effects (Stroke, Shadow, Outer Glow, Color Overlay, Inner Shadow)
+            if (layer.effects && Object.keys(layer.effects).length > 0) {
+                layerRecord.effects = layer.effects;
             }
 
             // Save raster image data if layer has canvas
@@ -87,7 +144,8 @@ class ProjectStore {
     }
 
     /**
-     * Unpacks a .comp package and reconstructs the document and layers
+     * Unpacks a .comp package and reconstructs the document and layers.
+     * Supports manifest versions 1 through 9.
      */
     static async deserializeProject(base64Zip, JSZip) {
         const zip = await JSZip.loadAsync(base64Zip, { base64: true });
@@ -99,35 +157,83 @@ class ProjectStore {
         const manifestText = await manifestFile.async("string");
         const manifest = JSON.parse(manifestText);
 
+        if (manifest.format !== "com.compositor.project") {
+            throw new Error(`Invalid Compositor project format: ${manifest.format}`);
+        }
+
+        const version = typeof manifest.version === 'number' ? manifest.version : parseInt(manifest.version, 10);
+        if (isNaN(version) || version < 1 || version > 9) {
+            throw new Error(`Unsupported project format version: ${manifest.version}. This app supports versions 1–9.`);
+        }
+
+        const width = manifest.dimensions ? manifest.dimensions.width : manifest.width;
+        const height = manifest.dimensions ? manifest.dimensions.height : manifest.height;
+
         const project = {
-            uuid: manifest.uuid,
-            width: manifest.dimensions.width,
-            height: manifest.dimensions.height,
+            uuid: manifest.uuid || manifest.documentID || this.generateUUID(),
+            version: version,
+            width: width,
+            height: height,
             resolution: manifest.resolution || 72,
-            activeLayerId: manifest.activeLayerUUID,
+            activeLayerId: manifest.activeLayerUUID || manifest.activeLayerID,
+            guides: { horizontal: [], vertical: [] },
             layers: []
         };
 
-        for (const record of manifest.layers) {
+        // Restore alignment guides if present (manifest v8+)
+        if (Array.isArray(manifest.guides)) {
+            for (const g of manifest.guides) {
+                if (g.axis === 'horizontal') {
+                    project.guides.horizontal.push(g.position);
+                } else if (g.axis === 'vertical') {
+                    project.guides.vertical.push(g.position);
+                }
+            }
+        }
+
+        const layersList = manifest.layers || [];
+        for (const record of layersList) {
+            const layerTransform = record.transform || {};
+            const layerWidth = layerTransform.width || project.width;
+            const layerHeight = layerTransform.height || project.height;
+
             const layer = {
-                id: record.uuid,
+                id: record.uuid || record.id,
                 name: record.name,
-                visible: record.visible !== false,
+                visible: record.visible !== undefined ? record.visible : (record.isVisible !== false),
                 opacity: record.opacity !== undefined ? record.opacity : 1.0,
                 blendMode: record.blendMode || "Normal",
-                x: record.transform?.x || 0,
-                y: record.transform?.y || 0,
-                width: record.transform?.width || project.width,
-                height: record.transform?.height || project.height,
-                rotation: record.transform?.rotation || 0,
-                flipX: !!record.transform?.flipX,
-                flipY: !!record.transform?.flipY,
+                x: layerTransform.x !== undefined ? layerTransform.x : (layerTransform.origin?.x || 0),
+                y: layerTransform.y !== undefined ? layerTransform.y : (layerTransform.origin?.y || 0),
+                width: layerWidth,
+                height: layerHeight,
+                rotation: layerTransform.rotation || 0,
+                flipX: !!layerTransform.flipX,
+                flipY: !!layerTransform.flipY,
                 isGroup: !!record.isGroup,
-                parentId: record.parentID || null,
-                maskSourceId: record.maskSourceID || null,
+                parentId: record.parentID || record.parentId || null,
+                maskSourceId: record.maskSourceID || record.maskSourceId || null,
                 hasMask: !!record.maskFile,
-                maskEnabled: record.maskEnabled !== false
+                maskEnabled: record.maskEnabled !== false,
+                adjustment: record.adjustment || null,
+                shape: record.shape || null,
+                shapeType: record.shape ? record.shape.kind : null,
+                shapeCornerRadius: record.shape ? (record.shape.cornerRadius || 0) : 0,
+                effects: record.effects || null
             };
+
+            // Reconstruct text style
+            if (record.text) {
+                layer.liveText = {
+                    content: record.text.content || 'Text',
+                    font: record.text.fontName || 'Segoe UI',
+                    fontSize: record.text.fontSize || 48,
+                    alignment: record.text.alignment || 'left',
+                    tracking: record.text.tracking || 0,
+                    leading: record.text.leading || 0,
+                    boxSize: record.text.boxSize || null
+                };
+            }
 
             // Reconstruct layer canvas from PNG asset
             if (record.imageFile) {
