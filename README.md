@@ -1,4 +1,4 @@
-# Compositor
+# Compositor Windows Edition by Maksimka version
 
 > [!NOTE]
 > **Windows Community Edition**: Looking for the Windows build? Download ready-to-run installers and portable executables from **[Releases](https://github.com/MaksVolkov7863/Compositor/releases)**!
