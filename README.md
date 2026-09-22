@@ -1,10 +1,35 @@
 # Compositor
 
-Adobe Photoshop costs too much and tools like GIMP don’t feel familiar enough for me to stay in flow. That’s why I built Compositor.
+> [!NOTE]
+> **Windows Community Edition**: Looking for the Windows build? Download ready-to-run installers and portable executables from **[Releases](https://github.com/MaksVolkov7863/Compositor/releases)**!
+> 
+> Maintained by [@MaksVolkov7863](https://github.com/MaksVolkov7863). Features full cross-platform compatibility with macOS `.comp` projects up to **Manifest Version 9** (supporting formats 1–9 seamlessly).
 
-The goal was to create a full-featured image editor that is completely free and open source. I use Photoshop for compositing and post-processing, so Compositor is built around that workflow - with the tools needed to create a pixel-perfect final image.
+---
 
-Because it’s open source, you can download the Xcode project and add, remove, or modify any feature to fit your workflow.
+Adobe Photoshop costs too much and tools like GIMP don’t feel familiar enough for me to stay in flow. That’s why Compositor was built.
+
+The goal is a full-featured, lightweight image editor that is completely free and open source — built around the compositing and post-processing workflow needed to create a pixel-perfect final image.
+
+---
+
+## 🪟 Windows Edition Quick Start
+
+- **Download**: Grab `Compositor.Setup.1.0.0.exe` (Installer) or `Compositor.1.0.0.exe` (Portable) from **[GitHub Releases](https://github.com/MaksVolkov7863/Compositor/releases)**.
+- **Project Format**: Fully compatible with macOS Compositor `.comp` project files up to Manifest Version 9.
+- **Local Dev**:
+  ```bash
+  cd windows
+  npm install
+  npm start
+  ```
+- **Build Windows Executable**:
+  ```bash
+  cd windows
+  npm run dist
+  ```
+
+---
 
 ## Features
 
