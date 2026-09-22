@@ -29,6 +29,8 @@ class CompositorEngine {
         this.toolSettings = {
             brush: { size: 30, hardness: 80, opacity: 100 },
             eraser: { size: 30, hardness: 80, opacity: 100 },
+            cloneStamp: { size: 40, hardness: 0, opacity: 100 },
+            spotHealing: { size: 24, hardness: 100, opacity: 100 },
             marquee: { type: 'rect', feather: 0 },
             lasso: { type: 'freehand' },
             wand: { tolerance: 32, contiguous: true },
@@ -37,6 +39,11 @@ class CompositorEngine {
             type: { text: 'Compositor', font: 'Segoe UI', size: 48, bold: false, italic: false },
             crop: { aspect: 'free' }
         };
+        this.cloneSettings = { aligned: true };
+        this.spotHealingMode = 'proximity';
+        this.clipboard = null;
+        this.shapeLayerCounter = 1;
+        this.textLayerCounter = 1;
 
         // Palette
         this.foregroundColor = '#ffffff';
@@ -49,10 +56,15 @@ class CompositorEngine {
 
         // Guides and Snapping
         this.guides = { horizontal: [], vertical: [] };
+        this.locksGuides = false;
         this.showRulers = true;
         this.showGuides = true;
         this.showGrid = false;
         this.snapEnabled = true;
+        this.snapToDocumentBounds = true;
+        this.snapToLayers = true;
+        this.snapToGuides = true;
+        this.snapToGrid = false;
 
         // History
         this.history = [];
@@ -1185,6 +1197,11 @@ class CompositorEngine {
                 l.flipY = !l.flipY;
             }
         }
+        if (horizontally) {
+            this.guides.vertical = this.guides.vertical.map(v => this.width - v);
+        } else {
+            this.guides.horizontal = this.guides.horizontal.map(h => this.height - h);
+        }
         this.recordHistory(`Flip Canvas ${horizontally ? 'Horizontal' : 'Vertical'}`);
         this.render();
     }
@@ -1323,94 +1340,196 @@ class CompositorEngine {
         } else {
             // Headless mock canvas for automated testing
             const buffer = new Uint8ClampedArray(w * h * 4);
+            const parseColor = (str) => {
+                if (!str || typeof str !== 'string') return { r: 255, g: 255, b: 255, a: 255 };
+                str = str.trim();
+                if (str.startsWith('#')) {
+                    let hex = str.slice(1);
+                    if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+                    const num = parseInt(hex, 16);
+                    return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255, a: 255 };
+                }
+                const m = str.match(/rgba?\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\)/);
+                if (m) {
+                    return {
+                        r: parseInt(m[1]),
+                        g: parseInt(m[2]),
+                        b: parseInt(m[3]),
+                        a: m[4] !== undefined ? Math.round(parseFloat(m[4]) * 255) : 255
+                    };
+                }
+                return { r: 255, g: 255, b: 255, a: 255 };
+            };
+
+            let currentPath = null;
+            const ctxObj = {
+                fillStyle: '#ffffff',
+                strokeStyle: '#000000',
+                globalAlpha: 1.0,
+                globalCompositeOperation: 'source-over',
+                filter: 'none',
+                font: '16px Segoe UI',
+                textAlign: 'left',
+                textBaseline: 'top',
+                lineWidth: 1,
+
+                fillRect: (x, y, rw, rh) => {
+                    const col = parseColor(ctxObj.fillStyle);
+                    const alpha = Math.round(col.a * ctxObj.globalAlpha);
+                    for (let py = Math.max(0, Math.floor(y)); py < Math.min(h, Math.ceil(y + rh)); py++) {
+                        for (let px = Math.max(0, Math.floor(x)); px < Math.min(w, Math.ceil(x + rw)); px++) {
+                            const idx = (py * w + px) * 4;
+                            buffer[idx] = col.r;
+                            buffer[idx + 1] = col.g;
+                            buffer[idx + 2] = col.b;
+                            buffer[idx + 3] = alpha;
+                        }
+                    }
+                },
+                clearRect: (x, y, rw, rh) => {
+                    for (let py = Math.max(0, Math.floor(y)); py < Math.min(h, Math.ceil(y + rh)); py++) {
+                        for (let px = Math.max(0, Math.floor(x)); px < Math.min(w, Math.ceil(x + rw)); px++) {
+                            const idx = (py * w + px) * 4;
+                            buffer[idx] = 0; buffer[idx + 1] = 0; buffer[idx + 2] = 0; buffer[idx + 3] = 0;
+                        }
+                    }
+                },
+                beginPath: () => {
+                    currentPath = [];
+                },
+                rect: (x, y, rw, rh) => {
+                    currentPath = { type: 'rect', x, y, rw, rh };
+                },
+                roundRect: (x, y, rw, rh, rad) => {
+                    currentPath = { type: 'roundRect', x, y, rw, rh, rad: rad || 0 };
+                },
+                ellipse: (cx, cy, rx, ry) => {
+                    currentPath = { type: 'ellipse', cx, cy, rx, ry };
+                },
+                arc: (cx, cy, r) => {
+                    currentPath = { type: 'ellipse', cx, cy, rx: r, ry: r };
+                },
+                fill: () => {
+                    if (!currentPath) return;
+                    const col = parseColor(ctxObj.fillStyle);
+                    const alpha = Math.round(col.a * ctxObj.globalAlpha);
+                    if (currentPath.type === 'rect') {
+                        ctxObj.fillRect(currentPath.x, currentPath.y, currentPath.rw, currentPath.rh);
+                    } else if (currentPath.type === 'roundRect') {
+                        const { x, y, rw, rh, rad } = currentPath;
+                        const r = Math.min(rad, Math.min(rw, rh) / 2);
+                        for (let py = Math.max(0, Math.floor(y)); py < Math.min(h, Math.ceil(y + rh)); py++) {
+                            for (let px = Math.max(0, Math.floor(x)); px < Math.min(w, Math.ceil(x + rw)); px++) {
+                                // Corner cut check
+                                let inCorner = false;
+                                let cornerDx = 0, cornerDy = 0;
+                                if (px < x + r && py < y + r) { inCorner = true; cornerDx = px - (x + r); cornerDy = py - (y + r); }
+                                else if (px > x + rw - r && py < y + r) { inCorner = true; cornerDx = px - (x + rw - r); cornerDy = py - (y + r); }
+                                else if (px < x + r && py > y + rh - r) { inCorner = true; cornerDx = px - (x + r); cornerDy = py - (y + rh - r); }
+                                else if (px > x + rw - r && py > y + rh - r) { inCorner = true; cornerDx = px - (x + rw - r); cornerDy = py - (y + rh - r); }
+
+                                if (inCorner && (cornerDx * cornerDx + cornerDy * cornerDy > r * r)) {
+                                    continue; // Cut outside rounded corner
+                                }
+                                const idx = (py * w + px) * 4;
+                                buffer[idx] = col.r; buffer[idx + 1] = col.g; buffer[idx + 2] = col.b; buffer[idx + 3] = alpha;
+                            }
+                        }
+                    } else if (currentPath.type === 'ellipse') {
+                        const { cx, cy, rx, ry } = currentPath;
+                        for (let py = Math.max(0, Math.floor(cy - ry)); py <= Math.min(h - 1, Math.ceil(cy + ry)); py++) {
+                            for (let px = Math.max(0, Math.floor(cx - rx)); px <= Math.min(w - 1, Math.ceil(cx + rx)); px++) {
+                                const normX = (px - cx) / Math.max(1, rx);
+                                const normY = (py - cy) / Math.max(1, ry);
+                                if (normX * normX + normY * normY <= 1.0) {
+                                    const idx = (py * w + px) * 4;
+                                    buffer[idx] = col.r; buffer[idx + 1] = col.g; buffer[idx + 2] = col.b; buffer[idx + 3] = alpha;
+                                }
+                            }
+                        }
+                    }
+                },
+                stroke: () => {},
+                clip: () => {},
+                fillText: (text, x, y) => {
+                    const col = parseColor(ctxObj.fillStyle);
+                    const alpha = Math.round(col.a * ctxObj.globalAlpha);
+                    const tw = Math.max(10, Math.min(w - x, (text ? text.length : 1) * 12));
+                    const th = 16;
+                    for (let py = Math.max(0, Math.floor(y)); py < Math.min(h, Math.ceil(y + th)); py++) {
+                        for (let px = Math.max(0, Math.floor(x)); px < Math.min(w, Math.ceil(x + tw)); px++) {
+                            const idx = (py * w + px) * 4;
+                            buffer[idx] = col.r; buffer[idx + 1] = col.g; buffer[idx + 2] = col.b; buffer[idx + 3] = alpha;
+                        }
+                    }
+                },
+                strokeText: () => {},
+                measureText: (text) => ({ width: (text ? text.length : 0) * 10 }),
+                createLinearGradient: () => ({ addColorStop: () => {} }),
+                createRadialGradient: () => ({ addColorStop: () => {} }),
+                getImageData: (x, y, gw, gh) => {
+                    const sub = new Uint8ClampedArray(gw * gh * 4);
+                    for (let py = 0; py < gh; py++) {
+                        for (let px = 0; px < gw; px++) {
+                            const srcIdx = ((y + py) * w + (x + px)) * 4;
+                            const dstIdx = (py * gw + px) * 4;
+                            if (srcIdx >= 0 && srcIdx < buffer.length) {
+                                sub[dstIdx] = buffer[srcIdx];
+                                sub[dstIdx + 1] = buffer[srcIdx + 1];
+                                sub[dstIdx + 2] = buffer[srcIdx + 2];
+                                sub[dstIdx + 3] = buffer[srcIdx + 3];
+                            }
+                        }
+                    }
+                    return { data: sub, width: gw, height: gh };
+                },
+                putImageData: (imgData, x, y) => {
+                    for (let py = 0; py < imgData.height; py++) {
+                        for (let px = 0; px < imgData.width; px++) {
+                            const srcIdx = (py * imgData.width + px) * 4;
+                            const dstIdx = ((y + py) * w + (x + px)) * 4;
+                            if (dstIdx >= 0 && dstIdx < buffer.length) {
+                                buffer[dstIdx] = imgData.data[srcIdx];
+                                buffer[dstIdx + 1] = imgData.data[srcIdx + 1];
+                                buffer[dstIdx + 2] = imgData.data[srcIdx + 2];
+                                buffer[dstIdx + 3] = imgData.data[srcIdx + 3];
+                            }
+                        }
+                    }
+                },
+                drawImage: (src, dx, dy, dw, dh) => {
+                    if (src && src.getContext) {
+                        const srcData = src.getContext().getImageData(0, 0, src.width, src.height);
+                        const targetW = dw || src.width;
+                        const targetH = dh || src.height;
+                        for (let py = 0; py < targetH; py++) {
+                            for (let px = 0; px < targetW; px++) {
+                                const srcX = Math.floor(px * src.width / targetW);
+                                const srcY = Math.floor(py * src.height / targetH);
+                                const sIdx = (srcY * src.width + srcX) * 4;
+                                const dIdx = ((dy + py) * w + (dx + px)) * 4;
+                                if (dIdx >= 0 && dIdx < buffer.length) {
+                                    buffer[dIdx] = srcData.data[sIdx];
+                                    buffer[dIdx + 1] = srcData.data[sIdx + 1];
+                                    buffer[dIdx + 2] = srcData.data[sIdx + 2];
+                                    buffer[dIdx + 3] = srcData.data[sIdx + 3];
+                                }
+                            }
+                        }
+                    }
+                },
+                save: () => {},
+                restore: () => {},
+                translate: () => {},
+                rotate: () => {},
+                scale: () => {}
+            };
+
             return {
                 width: w,
                 height: h,
-                getContext: () => ({
-                    fillStyle: '#000000',
-                    strokeStyle: '#000000',
-                    globalAlpha: 1.0,
-                    globalCompositeOperation: 'source-over',
-                    filter: 'none',
-                    fillRect: (x, y, rw, rh) => {
-                        for (let py = Math.max(0, y); py < Math.min(h, y + rh); py++) {
-                            for (let px = Math.max(0, x); px < Math.min(w, x + rw); px++) {
-                                const idx = (py * w + px) * 4;
-                                buffer[idx] = 255; buffer[idx+1] = 255; buffer[idx+2] = 255; buffer[idx+3] = 255;
-                            }
-                        }
-                    },
-                    clearRect: (x, y, rw, rh) => {
-                        for (let py = Math.max(0, y); py < Math.min(h, y + rh); py++) {
-                            for (let px = Math.max(0, x); px < Math.min(w, x + rw); px++) {
-                                const idx = (py * w + px) * 4;
-                                buffer[idx] = 0; buffer[idx+1] = 0; buffer[idx+2] = 0; buffer[idx+3] = 0;
-                            }
-                        }
-                    },
-                    getImageData: (x, y, gw, gh) => {
-                        const sub = new Uint8ClampedArray(gw * gh * 4);
-                        for (let py = 0; py < gh; py++) {
-                            for (let px = 0; px < gw; px++) {
-                                const srcIdx = ((y + py) * w + (x + px)) * 4;
-                                const dstIdx = (py * gw + px) * 4;
-                                if (srcIdx >= 0 && srcIdx < buffer.length) {
-                                    sub[dstIdx] = buffer[srcIdx];
-                                    sub[dstIdx+1] = buffer[srcIdx+1];
-                                    sub[dstIdx+2] = buffer[srcIdx+2];
-                                    sub[dstIdx+3] = buffer[srcIdx+3];
-                                }
-                            }
-                        }
-                        return { data: sub, width: gw, height: gh };
-                    },
-                    putImageData: (imgData, x, y) => {
-                        for (let py = 0; py < imgData.height; py++) {
-                            for (let px = 0; px < imgData.width; px++) {
-                                const srcIdx = (py * imgData.width + px) * 4;
-                                const dstIdx = ((y + py) * w + (x + px)) * 4;
-                                if (dstIdx >= 0 && dstIdx < buffer.length) {
-                                    buffer[dstIdx] = imgData.data[srcIdx];
-                                    buffer[dstIdx+1] = imgData.data[srcIdx+1];
-                                    buffer[dstIdx+2] = imgData.data[srcIdx+2];
-                                    buffer[dstIdx+3] = imgData.data[srcIdx+3];
-                                }
-                            }
-                        }
-                    },
-                    drawImage: (src, dx, dy, dw, dh) => {
-                        if (src && src.getContext) {
-                            const srcData = src.getContext().getImageData(0, 0, src.width, src.height);
-                            const targetW = dw || src.width;
-                            const targetH = dh || src.height;
-                            for (let py = 0; py < targetH; py++) {
-                                for (let px = 0; px < targetW; px++) {
-                                    const srcX = Math.floor(px * src.width / targetW);
-                                    const srcY = Math.floor(py * src.height / targetH);
-                                    const sIdx = (srcY * src.width + srcX) * 4;
-                                    const dIdx = ((dy + py) * w + (dx + px)) * 4;
-                                    if (dIdx >= 0 && dIdx < buffer.length) {
-                                        buffer[dIdx] = srcData.data[sIdx];
-                                        buffer[dIdx+1] = srcData.data[sIdx+1];
-                                        buffer[dIdx+2] = srcData.data[sIdx+2];
-                                        buffer[dIdx+3] = srcData.data[sIdx+3];
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    save: () => {},
-                    restore: () => {},
-                    translate: () => {},
-                    rotate: () => {},
-                    scale: () => {},
-                    beginPath: () => {},
-                    arc: () => {},
-                    fill: () => {},
-                    stroke: () => {},
-                    clip: () => {}
-                }),
-                toDataURL: () => 'data:image/png;base64,mock'
+                getContext: () => ctxObj,
+                toDataURL: (format = 'image/png') => `data:${format};base64,mock`
             };
         }
     }
@@ -1458,28 +1577,43 @@ class CompositorEngine {
         this.height = Math.max(1, Math.min(30000, newHeight));
 
         let dx = 0, dy = 0;
-        switch (anchor) {
-            case 'center':
-                dx = Math.round((this.width - oldW) / 2);
-                dy = Math.round((this.height - oldH) / 2);
-                break;
-            case 'top-left':
-                dx = 0; dy = 0;
-                break;
-            case 'top-right':
-                dx = this.width - oldW; dy = 0;
-                break;
-            case 'bottom-left':
-                dx = 0; dy = this.height - oldH;
-                break;
-            case 'bottom-right':
-                dx = this.width - oldW; dy = this.height - oldH;
-                break;
+        if (typeof anchor === 'number') {
+            // Anchors 0..8 matching Mac CanvasSizeOptions (anchor % 3 for x, anchor / 3 for y)
+            const ax = anchor % 3; // 0: left, 1: center, 2: right
+            const ay = Math.floor(anchor / 3); // 0: top, 1: center, 2: bottom
+            dx = ax === 0 ? 0 : (ax === 1 ? Math.round((this.width - oldW) / 2) : this.width - oldW);
+            dy = ay === 0 ? 0 : (ay === 1 ? Math.round((this.height - oldH) / 2) : this.height - oldH);
+        } else {
+            switch (anchor) {
+                case 'center':
+                    dx = Math.round((this.width - oldW) / 2);
+                    dy = Math.round((this.height - oldH) / 2);
+                    break;
+                case 'top-left':
+                    dx = 0; dy = 0;
+                    break;
+                case 'top-right':
+                    dx = this.width - oldW; dy = 0;
+                    break;
+                case 'bottom-left':
+                    dx = 0; dy = this.height - oldH;
+                    break;
+                case 'bottom-right':
+                    dx = this.width - oldW; dy = this.height - oldH;
+                    break;
+            }
         }
 
         for (const layer of this.layers) {
             layer.x += dx;
             layer.y += dy;
+        }
+
+        if (dx !== 0) {
+            this.guides.vertical = this.guides.vertical.map(v => v + dx);
+        }
+        if (dy !== 0) {
+            this.guides.horizontal = this.guides.horizontal.map(h => h + dy);
         }
 
         if (this.canvas) {
@@ -1525,6 +1659,9 @@ class CompositorEngine {
                 layer.maskCtx = newMaskCtx;
             }
         }
+
+        this.guides.vertical = this.guides.vertical.map(v => Math.round(v * scaleX));
+        this.guides.horizontal = this.guides.horizontal.map(h => Math.round(h * scaleY));
 
         if (this.canvas) {
             this.canvas.width = this.width;
@@ -1636,6 +1773,543 @@ class CompositorEngine {
         layer.ctx.putImageData(imgData, 0, 0);
         this.recordHistory('Gradient Map');
         this.render();
+    }
+
+    // --- Brush Stepping & Tool Properties ---
+
+    stepBrushSize(delta = 5) {
+        const current = this.toolSettings.brush.size;
+        const next = Math.max(1, Math.min(1000, current + delta));
+        this.toolSettings.brush.size = next;
+        return next;
+    }
+
+    stepBrushHardness(delta = 25) {
+        const current = this.toolSettings.brush.hardness;
+        const next = Math.max(0, Math.min(100, current + delta));
+        this.toolSettings.brush.hardness = next;
+        return next;
+    }
+
+    // --- Guides & Snapping Pipeline ---
+
+    addGuide(guideOrAxis, maybePos) {
+        if (this.locksGuides) return null;
+        let axis, position, id;
+        if (typeof guideOrAxis === 'object') {
+            axis = guideOrAxis.axis;
+            position = guideOrAxis.position;
+            id = guideOrAxis.id || 'g_' + Math.random().toString(36).substring(2, 9);
+        } else {
+            axis = guideOrAxis;
+            position = maybePos;
+            id = 'g_' + Math.random().toString(36).substring(2, 9);
+        }
+        const guide = { id, axis, position: Math.round(position) };
+        if (axis === 'vertical') {
+            this.guides.vertical.push(guide.position);
+        } else {
+            this.guides.horizontal.push(guide.position);
+        }
+        this.recordHistory('Add Guide');
+        this.render();
+        return guide;
+    }
+
+    removeGuide(guideOrPosition, axis) {
+        if (this.locksGuides) return false;
+        let pos = typeof guideOrPosition === 'object' ? guideOrPosition.position : guideOrPosition;
+        let ax = typeof guideOrPosition === 'object' ? guideOrPosition.axis : axis;
+        if (ax === 'vertical') {
+            const idx = this.guides.vertical.indexOf(pos);
+            if (idx !== -1) {
+                this.guides.vertical.splice(idx, 1);
+                this.recordHistory('Remove Guide');
+                this.render();
+                return true;
+            }
+        } else if (ax === 'horizontal') {
+            const idx = this.guides.horizontal.indexOf(pos);
+            if (idx !== -1) {
+                this.guides.horizontal.splice(idx, 1);
+                this.recordHistory('Remove Guide');
+                this.render();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    clearGuides() {
+        // Clear Guides works even when locked (matching GuideTests.swift)
+        this.guides.horizontal = [];
+        this.guides.vertical = [];
+        this.recordHistory('Clear Guides');
+        this.render();
+    }
+
+    cropSnapTargets() {
+        if (!this.snapEnabled) return { xs: [], ys: [] };
+        const xs = new Set();
+        const ys = new Set();
+
+        if (this.snapToDocumentBounds) {
+            xs.add(0);
+            xs.add(this.width);
+            ys.add(0);
+            ys.add(this.height);
+        }
+
+        if (this.snapToLayers) {
+            for (const l of this.layers) {
+                if (!l.visible) continue;
+                xs.add(l.x);
+                xs.add(l.x + l.width);
+                ys.add(l.y);
+                ys.add(l.y + l.height);
+            }
+        }
+
+        if (this.snapToGuides && this.showGuides) {
+            for (const v of this.guides.vertical) xs.add(v);
+            for (const h of this.guides.horizontal) ys.add(h);
+        }
+
+        if (this.snapToGrid && this.showGrid) {
+            for (let x = 0; x <= this.width; x += 8) xs.add(x);
+            for (let y = 0; y <= this.height; y += 8) ys.add(y);
+        }
+
+        return { xs: Array.from(xs).sort((a, b) => a - b), ys: Array.from(ys).sort((a, b) => a - b) };
+    }
+
+    transformSnapTargets(excluding = []) {
+        if (!this.snapEnabled) return { xs: [], ys: [] };
+        const snap = this.cropSnapTargets();
+        const xs = new Set(snap.xs);
+        const ys = new Set(snap.ys);
+
+        if (this.snapToDocumentBounds) {
+            xs.add(Math.round(this.width / 2));
+            ys.add(Math.round(this.height / 2));
+        }
+
+        if (this.snapToLayers) {
+            for (const l of this.layers) {
+                if (!l.visible || excluding.includes(l.id)) continue;
+                xs.add(Math.round(l.x + l.width / 2));
+                ys.add(Math.round(l.y + l.height / 2));
+            }
+        }
+
+        return { xs: Array.from(xs).sort((a, b) => a - b), ys: Array.from(ys).sort((a, b) => a - b) };
+    }
+
+    // --- Clone Stamp & Spot Healing Pipeline ---
+
+    setCloneSource(x, y) {
+        this.samplePoint = { x: Math.round(x), y: Math.round(y) };
+        this.cloneOffset = null;
+    }
+
+    applyCloneStampStroke(startX, startY, endX = startX, endY = startY) {
+        const layer = this.getActiveLayer();
+        if (!layer) return false;
+        if (!this.samplePoint) {
+            throw new Error('Clone Stamp requires a source point. Set sample point first.');
+        }
+
+        let offset;
+        if (this.cloneSettings.aligned) {
+            if (!this.cloneOffset) {
+                this.cloneOffset = { x: startX - this.samplePoint.x, y: startY - this.samplePoint.y };
+            }
+            offset = this.cloneOffset;
+        } else {
+            offset = { x: startX - this.samplePoint.x, y: startY - this.samplePoint.y };
+        }
+
+        const sourceX = startX - offset.x;
+        const sourceY = startY - offset.y;
+
+        const srcData = layer.ctx.getImageData(0, 0, layer.width, layer.height);
+        const dstData = layer.ctx.getImageData(0, 0, layer.width, layer.height);
+        const radius = Math.round(this.toolSettings.cloneStamp.size / 2);
+
+        for (let dy = -radius; dy <= radius; dy++) {
+            for (let dx = -radius; dx <= radius; dx++) {
+                if (dx * dx + dy * dy <= radius * radius) {
+                    const tx = Math.round(startX + dx);
+                    const ty = Math.round(startY + dy);
+                    const sx = Math.round(sourceX + dx);
+                    const sy = Math.round(sourceY + dy);
+
+                    if (tx >= 0 && tx < layer.width && ty >= 0 && ty < layer.height &&
+                        sx >= 0 && sx < layer.width && sy >= 0 && sy < layer.height) {
+                        const sIdx = (sy * layer.width + sx) * 4;
+                        const dIdx = (ty * layer.width + tx) * 4;
+                        dstData.data[dIdx] = srcData.data[sIdx];
+                        dstData.data[dIdx + 1] = srcData.data[sIdx + 1];
+                        dstData.data[dIdx + 2] = srcData.data[sIdx + 2];
+                        dstData.data[dIdx + 3] = srcData.data[sIdx + 3];
+                    }
+                }
+            }
+        }
+
+        layer.ctx.putImageData(dstData, 0, 0);
+        this.recordHistory('Clone Stamp');
+        this.render();
+        return true;
+    }
+
+    applySpotHealing(targetX, targetY, radius = 12) {
+        const layer = this.getActiveLayer();
+        if (!layer) return false;
+
+        const imgData = layer.ctx.getImageData(0, 0, layer.width, layer.height);
+        const data = imgData.data;
+        const w = layer.width, h = layer.height;
+
+        // Collect boundary pixel colors just outside radius
+        let sumR = 0, sumG = 0, sumB = 0, count = 0;
+        const outerR = radius + 2;
+        for (let angle = 0; angle < Math.PI * 2; angle += 0.2) {
+            const bx = Math.round(targetX + Math.cos(angle) * outerR);
+            const by = Math.round(targetY + Math.sin(angle) * outerR);
+            if (bx >= 0 && bx < w && by >= 0 && by < h) {
+                const idx = (by * w + bx) * 4;
+                if (data[idx + 3] > 0) {
+                    sumR += data[idx];
+                    sumG += data[idx + 1];
+                    sumB += data[idx + 2];
+                    count++;
+                }
+            }
+        }
+
+        const avgR = count > 0 ? Math.round(sumR / count) : 128;
+        const avgG = count > 0 ? Math.round(sumG / count) : 128;
+        const avgB = count > 0 ? Math.round(sumB / count) : 128;
+
+        for (let dy = -radius; dy <= radius; dy++) {
+            for (let dx = -radius; dx <= radius; dx++) {
+                const distSq = dx * dx + dy * dy;
+                if (distSq <= radius * radius) {
+                    const px = Math.round(targetX + dx);
+                    const py = Math.round(targetY + dy);
+                    if (px >= 0 && px < w && py >= 0 && py < h) {
+                        const idx = (py * w + px) * 4;
+                        const weight = Math.min(1.0, 1.2 * (1.0 - Math.sqrt(distSq) / radius));
+                        data[idx] = Math.round(data[idx] * (1 - weight) + avgR * weight);
+                        data[idx + 1] = Math.round(data[idx + 1] * (1 - weight) + avgG * weight);
+                        data[idx + 2] = Math.round(data[idx + 2] * (1 - weight) + avgB * weight);
+                        data[idx + 3] = 255;
+                    }
+                }
+            }
+        }
+
+        layer.ctx.putImageData(imgData, 0, 0);
+        this.recordHistory('Spot Healing');
+        this.render();
+        return true;
+    }
+
+    // --- Vector Shapes Pipeline ---
+
+    addShapeLayer(type, rect = {}, options = {}) {
+        const x = rect.x !== undefined ? rect.x : 0;
+        const y = rect.y !== undefined ? rect.y : 0;
+        const width = rect.width !== undefined ? rect.width : 100;
+        const height = rect.height !== undefined ? rect.height : 100;
+        const cornerRadius = options.cornerRadius || 0;
+        const fill = options.fill !== undefined ? options.fill : true;
+        const stroke = options.stroke !== undefined ? options.stroke : false;
+        const strokeWidth = options.strokeWidth || 2;
+        const color = options.color || this.foregroundColor;
+
+        const typeCap = type.charAt(0).toUpperCase() + type.slice(1);
+        const layerName = `${typeCap} ${this.shapeLayerCounter++}`;
+        const layer = this.addLayer(layerName);
+        layer.x = x;
+        layer.y = y;
+        layer.width = width;
+        layer.height = height;
+
+        layer.canvas = this.createCanvas(width, height);
+        layer.ctx = layer.canvas.getContext('2d', { willReadFrequently: true });
+
+        const ctx = layer.ctx;
+        ctx.save();
+        ctx.fillStyle = color;
+        ctx.strokeStyle = options.strokeColor || this.backgroundColor;
+        ctx.lineWidth = strokeWidth;
+
+        if (type === 'ellipse') {
+            const rx = width / 2;
+            const ry = height / 2;
+            ctx.beginPath();
+            ctx.ellipse(rx, ry, rx, ry, 0, 0, Math.PI * 2);
+            if (fill) ctx.fill();
+            if (stroke) ctx.stroke();
+        } else if (type === 'rounded' || cornerRadius > 0) {
+            const maxR = Math.min(width, height) / 2;
+            const effectiveR = Math.min(cornerRadius, maxR);
+            ctx.beginPath();
+            if (ctx.roundRect) {
+                ctx.roundRect(0, 0, width, height, effectiveR);
+            } else {
+                ctx.rect(0, 0, width, height);
+            }
+            if (fill) ctx.fill();
+            if (stroke) ctx.stroke();
+            layer.shapeCornerRadius = effectiveR;
+        } else {
+            ctx.beginPath();
+            ctx.rect(0, 0, width, height);
+            if (fill) ctx.fill();
+            if (stroke) ctx.stroke();
+        }
+
+        ctx.restore();
+        layer.shapeType = type;
+        this.recordHistory('Shape');
+        this.render();
+        return layer;
+    }
+
+    // --- Live Text Pipeline ---
+
+    addTextLayer(options = {}) {
+        const text = options.text || 'Text';
+        const x = options.x !== undefined ? options.x : 0;
+        const y = options.y !== undefined ? options.y : 0;
+        const fontSize = options.fontSize || 48;
+        const font = options.font || 'Segoe UI';
+        const color = options.color || this.foregroundColor;
+        const alignment = options.alignment || 'left';
+        const tracking = options.tracking || 0;
+        const boxSize = options.boxSize || null;
+
+        const layer = this.addLayer(`Text - ${text.substring(0, 12)}`);
+        layer.x = x;
+        layer.y = y;
+        layer.liveText = {
+            content: text,
+            font,
+            fontSize,
+            color,
+            alignment,
+            tracking,
+            boxSize
+        };
+
+        this.renderTextLayerCanvas(layer);
+        this.recordHistory('Add Text');
+        this.render();
+        return layer;
+    }
+
+    editTextLayer(layerId, newContent, newStyle = {}) {
+        const layer = this.layers.find(l => l.id === layerId);
+        if (!layer || !layer.liveText) return false;
+
+        layer.liveText.content = newContent;
+        Object.assign(layer.liveText, newStyle);
+        this.renderTextLayerCanvas(layer);
+        this.recordHistory('Edit Text');
+        this.render();
+        return true;
+    }
+
+    renderTextLayerCanvas(layer) {
+        const t = layer.liveText;
+        const w = t.boxSize ? t.boxSize.width : Math.max(100, Math.round(t.content.length * t.fontSize * 0.7));
+        const h = t.boxSize ? t.boxSize.height : Math.max(40, Math.round(t.fontSize * 1.5));
+
+        layer.width = w;
+        layer.height = h;
+        layer.canvas = this.createCanvas(w, h);
+        layer.ctx = layer.canvas.getContext('2d', { willReadFrequently: true });
+
+        const ctx = layer.ctx;
+        ctx.save();
+        ctx.font = `${t.fontSize}px ${t.font}`;
+        ctx.fillStyle = t.color;
+        ctx.textAlign = t.alignment;
+        ctx.textBaseline = 'top';
+
+        const drawX = t.alignment === 'right' ? w : (t.alignment === 'center' ? w / 2 : 0);
+        ctx.fillText(t.content, drawX, 0);
+        ctx.restore();
+    }
+
+    // --- Outer Glow & Layer Effects ---
+
+    validateOuterGlow(effect) {
+        if (!effect || typeof effect !== 'object') return false;
+        if (typeof effect.size !== 'number' || effect.size < 0) return false;
+        if (typeof effect.opacity !== 'number' || effect.opacity < 0 || effect.opacity > 1) return false;
+        if (effect.red !== undefined && (effect.red < 0 || effect.red > 1)) return false;
+        if (effect.green !== undefined && (effect.green < 0 || effect.green > 1)) return false;
+        if (effect.blue !== undefined && (effect.blue < 0 || effect.blue > 1)) return false;
+        return true;
+    }
+
+    setOuterGlow(layerId, effect) {
+        const layer = this.layers.find(l => l.id === layerId);
+        if (!layer) return false;
+        if (effect === null) {
+            if (layer.effects) delete layer.effects.outerGlow;
+            this.recordHistory('Remove Outer Glow');
+            this.render();
+            return true;
+        }
+        if (!this.validateOuterGlow(effect)) {
+            throw new Error('Invalid Outer Glow effect parameters');
+        }
+        layer.effects = layer.effects || {};
+        layer.effects.outerGlow = { ...effect };
+        this.recordHistory('Layer Effect: Outer Glow');
+        this.render();
+        return true;
+    }
+
+    // --- Export Pipeline ---
+
+    exportPNG() {
+        if (this.width > 30000 || this.height > 30000) {
+            throw new Error('Canvas size exceeds maximum export dimensions of 30,000 pixels');
+        }
+
+        const outCanvas = this.createCanvas(this.width, this.height);
+        const outCtx = outCanvas.getContext('2d');
+
+        for (const layer of this.layers) {
+            if (!layer.visible) continue;
+            outCtx.save();
+            outCtx.globalAlpha = layer.opacity;
+            outCtx.globalCompositeOperation = this.mapBlendMode(layer.blendMode);
+            outCtx.drawImage(layer.canvas, layer.x, layer.y);
+            outCtx.restore();
+        }
+
+        return {
+            width: this.width,
+            height: this.height,
+            format: 'image/png',
+            canvas: outCanvas,
+            dataUrl: outCanvas.toDataURL ? outCanvas.toDataURL('image/png') : null
+        };
+    }
+
+    exportJPEG(options = {}) {
+        if (this.width > 30000 || this.height > 30000) {
+            throw new Error('Canvas size exceeds maximum export dimensions of 30,000 pixels');
+        }
+
+        const quality = options.quality !== undefined ? options.quality : 0.92;
+        const matte = options.matte || '#ffffff';
+
+        const outCanvas = this.createCanvas(this.width, this.height);
+        const outCtx = outCanvas.getContext('2d');
+
+        // Draw matte background
+        outCtx.fillStyle = matte;
+        outCtx.fillRect(0, 0, this.width, this.height);
+
+        for (const layer of this.layers) {
+            if (!layer.visible) continue;
+            outCtx.save();
+            outCtx.globalAlpha = layer.opacity;
+            outCtx.globalCompositeOperation = this.mapBlendMode(layer.blendMode);
+            outCtx.drawImage(layer.canvas, layer.x, layer.y);
+            outCtx.restore();
+        }
+
+        return {
+            width: this.width,
+            height: this.height,
+            format: 'image/jpeg',
+            quality,
+            matte,
+            canvas: outCanvas,
+            dataUrl: outCanvas.toDataURL ? outCanvas.toDataURL('image/jpeg', quality) : null
+        };
+    }
+
+    // --- Selection Clipboard & Feathering ---
+
+    copySelection() {
+        const layer = this.getActiveLayer();
+        if (!layer || !this.selection) return null;
+
+        const bounds = this.selection.bounds || { x: 0, y: 0, width: this.width, height: this.height };
+        const clipCanvas = this.createCanvas(bounds.width, bounds.height);
+        const clipCtx = clipCanvas.getContext('2d');
+
+        clipCtx.drawImage(layer.canvas, bounds.x - layer.x, bounds.y - layer.y, bounds.width, bounds.height, 0, 0, bounds.width, bounds.height);
+        this.clipboard = {
+            width: bounds.width,
+            height: bounds.height,
+            canvas: clipCanvas,
+            x: bounds.x,
+            y: bounds.y
+        };
+        return this.clipboard;
+    }
+
+    cutSelection() {
+        const clip = this.copySelection();
+        if (!clip) return null;
+
+        const layer = this.getActiveLayer();
+        const bounds = this.selection.bounds || { x: 0, y: 0, width: this.width, height: this.height };
+        layer.ctx.clearRect(bounds.x - layer.x, bounds.y - layer.y, bounds.width, bounds.height);
+
+        this.recordHistory('Cut');
+        this.render();
+        return clip;
+    }
+
+    pasteSelection() {
+        if (!this.clipboard) return null;
+        const newLayer = this.addLayer('Pasted Layer');
+        newLayer.x = this.clipboard.x || 0;
+        newLayer.y = this.clipboard.y || 0;
+        newLayer.width = this.clipboard.width;
+        newLayer.height = this.clipboard.height;
+        newLayer.canvas = this.clipboard.canvas;
+        newLayer.ctx = newLayer.canvas.getContext('2d');
+
+        this.recordHistory('Paste');
+        this.render();
+        return newLayer;
+    }
+
+    featherSelection(radius = 5) {
+        if (!this.selection || !this.selection.mask) return;
+        const w = this.selection.width, h = this.selection.height;
+        const original = this.selection.mask;
+        const feathered = new Uint8Array(w * h);
+
+        const r = Math.max(1, Math.round(radius));
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                let sum = 0, cnt = 0;
+                for (let kx = -r; kx <= r; kx++) {
+                    const nx = x + kx;
+                    if (nx >= 0 && nx < w) {
+                        sum += original[y * w + nx];
+                        cnt++;
+                    }
+                }
+                feathered[y * w + x] = Math.round(sum / cnt);
+            }
+        }
+        this.selection.mask = feathered;
+        this.selection.feather = radius;
     }
 
     static createHeadless(width = 800, height = 600) {
