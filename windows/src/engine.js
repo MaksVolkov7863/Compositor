@@ -3,6 +3,57 @@
  * Comprehensive Canvas, Layer, Tool, Adjustment & Selection Pipeline
  */
 
+// Headless polyfills for automated Node.js CI testing
+if (typeof document === 'undefined') {
+    globalThis.document = {
+        createElement: (tag) => {
+            if (tag === 'canvas') {
+                const w = 800, h = 600;
+                const buffer = new Uint8ClampedArray(w * h * 4);
+                return {
+                    width: w,
+                    height: h,
+                    getContext: () => ({
+                        fillStyle: '#000000',
+                        strokeStyle: '#000000',
+                        globalAlpha: 1.0,
+                        globalCompositeOperation: 'source-over',
+                        filter: 'none',
+                        fillRect: () => {},
+                        clearRect: () => {},
+                        drawImage: () => {},
+                        getImageData: (x, y, gw, gh) => ({ data: new Uint8ClampedArray(gw * gh * 4), width: gw, height: gh }),
+                        putImageData: () => {},
+                        save: () => {},
+                        restore: () => {},
+                        beginPath: () => {},
+                        fill: () => {},
+                        stroke: () => {}
+                    }),
+                    toDataURL: () => 'data:image/png;base64,mock'
+                };
+            }
+            return {};
+        }
+    };
+}
+if (typeof window === 'undefined') {
+    globalThis.window = { innerWidth: 1920, innerHeight: 1080 };
+}
+if (typeof requestAnimationFrame === 'undefined') {
+    globalThis.requestAnimationFrame = (fn) => setTimeout(fn, 16);
+}
+if (typeof Path2D === 'undefined') {
+    globalThis.Path2D = class {
+        rect() {}
+        ellipse() {}
+        moveTo() {}
+        lineTo() {}
+        closePath() {}
+        addPath() {}
+    };
+}
+
 class CompositorEngine {
     constructor(canvasElement, overlayElement) {
         this.canvas = canvasElement;
@@ -126,7 +177,7 @@ class CompositorEngine {
 
     createLayer(name = 'New Layer', w = this.width, h = this.height) {
         const id = 'layer_' + Math.random().toString(36).substring(2, 11);
-        const canvas = document.createElement('canvas');
+        const canvas = this.createCanvas(w, h);
         canvas.width = w;
         canvas.height = h;
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -229,7 +280,7 @@ class CompositorEngine {
         const upper = this.layers[idx];
         const lower = this.layers[idx - 1];
 
-        const tempCanvas = document.createElement('canvas');
+        const tempCanvas = this.createCanvas(this.width, this.height);
         tempCanvas.width = this.width;
         tempCanvas.height = this.height;
         const tempCtx = tempCanvas.getContext('2d');
@@ -264,7 +315,7 @@ class CompositorEngine {
     }
 
     flattenImage() {
-        const flatCanvas = document.createElement('canvas');
+        const flatCanvas = this.createCanvas(this.width, this.height);
         flatCanvas.width = this.width;
         flatCanvas.height = this.height;
         const flatCtx = flatCanvas.getContext('2d');
@@ -286,7 +337,7 @@ class CompositorEngine {
     addMaskToLayer(layer) {
         if (!layer || layer.hasMask) return;
         layer.hasMask = true;
-        layer.maskCanvas = document.createElement('canvas');
+        layer.maskCanvas = this.createCanvas(layer.width, layer.height);
         layer.maskCanvas.width = layer.width;
         layer.maskCanvas.height = layer.height;
         layer.maskCtx = layer.maskCanvas.getContext('2d', { willReadFrequently: true });
@@ -352,7 +403,7 @@ class CompositorEngine {
 
             if (layer.hasMask && layer.maskEnabled && layer.maskCanvas) {
                 // Render layer with mask
-                const tempCanvas = document.createElement('canvas');
+                const tempCanvas = this.createCanvas(layer.width, layer.height);
                 tempCanvas.width = layer.width;
                 tempCanvas.height = layer.height;
                 const tempCtx = tempCanvas.getContext('2d');
@@ -737,7 +788,7 @@ class CompositorEngine {
         if (!layer || !this.samplePoint) return;
         const offset = { x: docX - this.samplePoint.x, y: docY - this.samplePoint.y };
 
-        const tempCanvas = document.createElement('canvas');
+        const tempCanvas = this.createCanvas(this.width, this.height);
         tempCanvas.width = this.width;
         tempCanvas.height = this.height;
         const tempCtx = tempCanvas.getContext('2d');
@@ -1078,7 +1129,7 @@ class CompositorEngine {
         if (!layer) return;
 
         // Fast canvas blur using CSS filter rendering
-        const tempCanvas = document.createElement('canvas');
+        const tempCanvas = this.createCanvas(layer.width, layer.height);
         tempCanvas.width = layer.width;
         tempCanvas.height = layer.height;
         const tempCtx = tempCanvas.getContext('2d');
@@ -1236,14 +1287,14 @@ class CompositorEngine {
             name,
             activeLayerId: this.activeLayerId,
             layers: this.layers.map(l => {
-                const copyCanvas = document.createElement('canvas');
+                const copyCanvas = this.createCanvas(l.width, l.height);
                 copyCanvas.width = l.width;
                 copyCanvas.height = l.height;
                 copyCanvas.getContext('2d').drawImage(l.canvas, 0, 0);
 
                 let maskCopy = null;
                 if (l.hasMask && l.maskCanvas) {
-                    maskCopy = document.createElement('canvas');
+                    maskCopy = this.createCanvas(l.width, l.height);
                     maskCopy.width = l.width;
                     maskCopy.height = l.height;
                     maskCopy.getContext('2d').drawImage(l.maskCanvas, 0, 0);
@@ -1297,14 +1348,14 @@ class CompositorEngine {
     restoreSnapshot(snapshot) {
         this.activeLayerId = snapshot.activeLayerId;
         this.layers = snapshot.layers.map(l => {
-            const canvas = document.createElement('canvas');
+            const canvas = this.createCanvas(l.width, l.height);
             canvas.width = l.width;
             canvas.height = l.height;
             canvas.getContext('2d').drawImage(l.canvas, 0, 0);
 
             let maskCanvas = null;
             if (l.hasMask && l.maskCanvas) {
-                maskCanvas = document.createElement('canvas');
+                maskCanvas = this.createCanvas(l.width, l.height);
                 maskCanvas.width = l.width;
                 maskCanvas.height = l.height;
                 maskCanvas.getContext('2d').drawImage(l.maskCanvas, 0, 0);
