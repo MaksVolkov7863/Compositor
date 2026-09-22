@@ -2,7 +2,19 @@ name: Verify
 
 on:
   push:
+    paths:
+      - 'Compositor/**'
+      - 'CompositorTests/**'
+      - 'CompositorUITests/**'
+      - 'Compositor.xcodeproj/**'
+      - 'scripts/**'
   pull_request:
+    paths:
+      - 'Compositor/**'
+      - 'CompositorTests/**'
+      - 'CompositorUITests/**'
+      - 'Compositor.xcodeproj/**'
+      - 'scripts/**'
 
 concurrency:
   group: verify-${{ github.workflow }}-${{ github.ref }}
