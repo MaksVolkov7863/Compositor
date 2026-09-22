@@ -227,12 +227,14 @@ function createMockCanvas(w, h) {
         },
 
         getImageData: (x = 0, y = 0, gw = w, gh = h) => {
-            const sub = new Uint8ClampedArray(gw * gh * 4);
-            for (let py = 0; py < gh; py++) {
-                for (let px = 0; px < gw; px++) {
+            const clampedW = Math.min(Math.max(1, gw), bufW);
+            const clampedH = Math.min(Math.max(1, gh), bufH);
+            const sub = new Uint8ClampedArray(clampedW * clampedH * 4);
+            for (let py = 0; py < clampedH; py++) {
+                for (let px = 0; px < clampedW; px++) {
                     const srcX = x + px;
                     const srcY = y + py;
-                    const dstIdx = (py * gw + px) * 4;
+                    const dstIdx = (py * clampedW + px) * 4;
                     if (srcX >= 0 && srcX < bufW && srcY >= 0 && srcY < bufH) {
                         const srcIdx = (srcY * bufW + srcX) * 4;
                         sub[dstIdx] = buffer[srcIdx];
@@ -242,7 +244,7 @@ function createMockCanvas(w, h) {
                     }
                 }
             }
-            return { data: sub, width: gw, height: gh };
+            return { data: sub, width: clampedW, height: clampedH };
         },
 
         putImageData: (imgData, x = 0, y = 0) => {
@@ -272,7 +274,11 @@ function createMockCanvas(w, h) {
                 const sctx = src.getContext('2d');
                 sw = src.width;
                 sh = src.height;
-                sdata = sctx.getImageData(0, 0, sw, sh).data;
+                const safeW = Math.min(sw, 4096);
+                const safeH = Math.min(sh, 4096);
+                sdata = sctx.getImageData(0, 0, safeW, safeH).data;
+                sw = safeW;
+                sh = safeH;
             } else if (src.data) {
                 sw = src.width;
                 sh = src.height;
@@ -313,10 +319,23 @@ function createMockCanvas(w, h) {
                         const srcAlpha = (sdata[sIdx + 3] / 255) * alpha;
                         buffer[dIdx + 3] = Math.round(buffer[dIdx + 3] * (1 - srcAlpha));
                     } else {
-                        buffer[dIdx] = sdata[sIdx];
-                        buffer[dIdx + 1] = sdata[sIdx + 1];
-                        buffer[dIdx + 2] = sdata[sIdx + 2];
-                        buffer[dIdx + 3] = Math.round(sdata[sIdx + 3] * alpha);
+                        const srcA = (sdata[sIdx + 3] / 255) * alpha;
+                        if (srcA <= 0) continue;
+                        if (srcA >= 1) {
+                            buffer[dIdx] = sdata[sIdx];
+                            buffer[dIdx + 1] = sdata[sIdx + 1];
+                            buffer[dIdx + 2] = sdata[sIdx + 2];
+                            buffer[dIdx + 3] = 255;
+                        } else {
+                            const dstA = buffer[dIdx + 3] / 255;
+                            const outA = srcA + dstA * (1 - srcA);
+                            if (outA > 0) {
+                                buffer[dIdx] = Math.round((sdata[sIdx] * srcA + buffer[dIdx] * dstA * (1 - srcA)) / outA);
+                                buffer[dIdx + 1] = Math.round((sdata[sIdx + 1] * srcA + buffer[dIdx + 1] * dstA * (1 - srcA)) / outA);
+                                buffer[dIdx + 2] = Math.round((sdata[sIdx + 2] * srcA + buffer[dIdx + 2] * dstA * (1 - srcA)) / outA);
+                                buffer[dIdx + 3] = Math.round(outA * 255);
+                            }
+                        }
                     }
                 }
             }
@@ -543,6 +562,12 @@ class CompositorEngine {
         dup.rotation = active.rotation;
         dup.flipX = active.flipX;
         dup.flipY = active.flipY;
+        if (active.liveText) dup.liveText = JSON.parse(JSON.stringify(active.liveText));
+        if (active.shapeType) {
+            dup.shapeType = active.shapeType;
+            dup.shapeCornerRadius = active.shapeCornerRadius;
+        }
+        if (active.effects) dup.effects = JSON.parse(JSON.stringify(active.effects));
         if (active.hasMask && active.maskCanvas) {
             this.addMaskToLayer(dup);
             dup.maskCtx.drawImage(active.maskCanvas, 0, 0);
@@ -1709,7 +1734,11 @@ class CompositorEngine {
                     maskCanvas: maskCopy,
                     maskCtx: maskCopy ? maskCopy.getContext('2d', { willReadFrequently: true }) : null,
                     maskEnabled: l.maskEnabled,
-                    maskSourceId: l.maskSourceId
+                    maskSourceId: l.maskSourceId,
+                    liveText: l.liveText ? JSON.parse(JSON.stringify(l.liveText)) : null,
+                    shapeType: l.shapeType || null,
+                    shapeCornerRadius: l.shapeCornerRadius || 0,
+                    effects: l.effects ? JSON.parse(JSON.stringify(l.effects)) : null
                 };
             })
         };
@@ -1763,6 +1792,10 @@ class CompositorEngine {
 
             return {
                 ...l,
+                liveText: l.liveText ? JSON.parse(JSON.stringify(l.liveText)) : null,
+                shapeType: l.shapeType || null,
+                shapeCornerRadius: l.shapeCornerRadius || 0,
+                effects: l.effects ? JSON.parse(JSON.stringify(l.effects)) : null,
                 canvas,
                 ctx: canvas.getContext('2d', { willReadFrequently: true }),
                 maskCanvas,
@@ -1831,6 +1864,18 @@ class CompositorEngine {
 
     resizeCanvas(newWidth, newHeight, anchor = 'center') {
         const oldW = this.width, oldH = this.height;
+        if (this.historyIndex >= 0 && this.history[this.historyIndex]) {
+            this.history[this.historyIndex].width = oldW;
+            this.history[this.historyIndex].height = oldH;
+            this.history[this.historyIndex].layers.forEach((snapL, idx) => {
+                const liveL = this.layers[idx];
+                if (liveL && snapL) {
+                    snapL.x = liveL.x;
+                    snapL.y = liveL.y;
+                }
+            });
+        }
+
         this.width = Math.max(1, Math.min(30000, newWidth));
         this.height = Math.max(1, Math.min(30000, newHeight));
 
@@ -2289,14 +2334,11 @@ class CompositorEngine {
 
         const typeCap = type.charAt(0).toUpperCase() + type.slice(1);
         const layerName = `${typeCap} ${this.shapeLayerCounter++}`;
-        const layer = this.addLayer(layerName);
+        const layer = this.createLayer(layerName, width, height);
         layer.x = x;
         layer.y = y;
         layer.width = width;
         layer.height = height;
-
-        layer.canvas = this.createCanvas(width, height);
-        layer.ctx = layer.canvas.getContext('2d', { willReadFrequently: true });
 
         const ctx = layer.ctx;
         ctx.save();
@@ -2332,8 +2374,17 @@ class CompositorEngine {
 
         ctx.restore();
         layer.shapeType = type;
+
+        const activeIdx = this.layers.findIndex(l => l.id === this.activeLayerId);
+        if (activeIdx !== -1) {
+            this.layers.splice(activeIdx + 1, 0, layer);
+        } else {
+            this.layers.push(layer);
+        }
+        this.activeLayerId = layer.id;
         this.recordHistory('Shape');
         this.render();
+        this.notifyUI();
         return layer;
     }
 
@@ -2350,7 +2401,7 @@ class CompositorEngine {
         const tracking = options.tracking || 0;
         const boxSize = options.boxSize || null;
 
-        const layer = this.addLayer(`Text - ${text.substring(0, 12)}`);
+        const layer = this.createLayer(`Text - ${text.substring(0, 12)}`, 100, 40);
         layer.x = x;
         layer.y = y;
         layer.liveText = {
@@ -2364,8 +2415,17 @@ class CompositorEngine {
         };
 
         this.renderTextLayerCanvas(layer);
+
+        const activeIdx = this.layers.findIndex(l => l.id === this.activeLayerId);
+        if (activeIdx !== -1) {
+            this.layers.splice(activeIdx + 1, 0, layer);
+        } else {
+            this.layers.push(layer);
+        }
+        this.activeLayerId = layer.id;
         this.recordHistory('Add Text');
         this.render();
+        this.notifyUI();
         return layer;
     }
 
@@ -2533,7 +2593,7 @@ class CompositorEngine {
 
     pasteSelection() {
         if (!this.clipboard) return null;
-        const newLayer = this.addLayer('Pasted Layer');
+        const newLayer = this.createLayer('Pasted Layer', this.clipboard.width, this.clipboard.height);
         newLayer.x = this.clipboard.x || 0;
         newLayer.y = this.clipboard.y || 0;
         newLayer.width = this.clipboard.width;
@@ -2541,8 +2601,16 @@ class CompositorEngine {
         newLayer.canvas = this.clipboard.canvas;
         newLayer.ctx = newLayer.canvas.getContext('2d');
 
+        const activeIdx = this.layers.findIndex(l => l.id === this.activeLayerId);
+        if (activeIdx !== -1) {
+            this.layers.splice(activeIdx + 1, 0, newLayer);
+        } else {
+            this.layers.push(newLayer);
+        }
+        this.activeLayerId = newLayer.id;
         this.recordHistory('Paste');
         this.render();
+        this.notifyUI();
         return newLayer;
     }
 
