@@ -1,9 +1,39 @@
-/**
- * Compositor Project (.comp) Serialization & Image Export/Import
- * Matches manifest specification from docs/project-format.md (versions 1–9)
- */
+let mockCanvasFactory = null;
+if (typeof require !== 'undefined') {
+    try {
+        const engine = require('./engine.js');
+        if (engine && engine.createMockCanvas) {
+            mockCanvasFactory = engine.createMockCanvas;
+        }
+    } catch (_) {}
+}
 
 class ProjectStore {
+    static createCanvas(w, h) {
+        if (typeof document !== 'undefined' && document.createElement) {
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            return canvas;
+        }
+        if (mockCanvasFactory) {
+            return mockCanvasFactory(w, h);
+        }
+        // Minimal fallback canvas
+        return {
+            width: w,
+            height: h,
+            getContext: () => ({
+                drawImage: () => {},
+                fillRect: () => {},
+                clearRect: () => {},
+                getImageData: () => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }),
+                putImageData: () => {}
+            }),
+            toDataURL: () => 'data:image/png;base64,'
+        };
+    }
+
     static generateUUID() {
         return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
             const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
@@ -241,9 +271,7 @@ class ProjectStore {
                 if (imgFile) {
                     const imgBase64 = await imgFile.async("base64");
                     const img = await this.loadImage(`data:image/png;base64,${imgBase64}`);
-                    const canvas = document.createElement('canvas');
-                    canvas.width = layer.width;
-                    canvas.height = layer.height;
+                    const canvas = this.createCanvas(layer.width, layer.height);
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0, layer.width, layer.height);
                     layer.canvas = canvas;
@@ -251,9 +279,7 @@ class ProjectStore {
                 }
             } else if (!layer.isGroup) {
                 // Blank layer
-                const canvas = document.createElement('canvas');
-                canvas.width = layer.width;
-                canvas.height = layer.height;
+                const canvas = this.createCanvas(layer.width, layer.height);
                 layer.canvas = canvas;
                 layer.ctx = canvas.getContext('2d');
             }
@@ -264,9 +290,7 @@ class ProjectStore {
                 if (maskFile) {
                     const maskBase64 = await maskFile.async("base64");
                     const maskImg = await this.loadImage(`data:image/png;base64,${maskBase64}`);
-                    const maskCanvas = document.createElement('canvas');
-                    maskCanvas.width = layer.width;
-                    maskCanvas.height = layer.height;
+                    const maskCanvas = this.createCanvas(layer.width, layer.height);
                     const maskCtx = maskCanvas.getContext('2d');
                     maskCtx.drawImage(maskImg, 0, 0, layer.width, layer.height);
                     layer.maskCanvas = maskCanvas;
