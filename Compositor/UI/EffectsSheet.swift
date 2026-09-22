@@ -13,6 +13,7 @@ struct EffectsSheet: View {
             case .colorOverlay: colorOverlay
             case .innerShadow: innerShadow
             case .outerGlow: outerGlow
+            case .innerGlow: innerGlow
             }
             HStack(spacing: 10) {
                 Spacer()
@@ -129,6 +130,23 @@ struct EffectsSheet: View {
             }), range: 0...100, inputRange: 0...500, unit: "px")
             slider("Opacity", value: Binding(get: { CGFloat(effect.opacity * 100) }, set: { value in
                 session.changeEffects { $0.outerGlow?.opacity = Double(value) / 100 }
+            }), range: 0...100, unit: "%")
+        }
+    }
+
+    @ViewBuilder private var innerGlow: some View {
+        let effect = session.editingEffects.innerGlow
+        HStack {
+            Text("Inner Glow").font(.headline)
+            Spacer()
+            if effect != nil { swatch(.innerGlow) }
+        }
+        if let effect {
+            slider("Size", value: Binding(get: { effect.size }, set: { size in
+                session.changeEffects { $0.innerGlow?.size = size }
+            }), range: 0...100, inputRange: 0...500, unit: "px")
+            slider("Opacity", value: Binding(get: { CGFloat(effect.opacity * 100) }, set: { value in
+                session.changeEffects { $0.innerGlow?.opacity = Double(value) / 100 }
             }), range: 0...100, unit: "%")
         }
     }

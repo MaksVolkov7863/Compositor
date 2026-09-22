@@ -69,7 +69,12 @@ final class CanvasView: NSView {
     private var displayedTargeting = false
     private var optionHeld = false
     private var palettePicking: Bool { session.tool == .eyedropper || (optionHeld && (session.tool == .brush || session.tool == .spotHealing || session.tool == .gradient) && session.brushStroke == nil && gradientDrag == nil) }
-    private var picking: Bool { palettePicking || session.colorPicker != nil || session.hueSampleMode != nil || session.levels?.sampleMode != nil }
+    private var picking: Bool {
+        palettePicking || session.colorPicker != nil || session.hueSampleMode != nil || session.levels?.sampleMode != nil
+            || session.filterEdit?.samplesWhiteBalance == true || session.filterEdit?.samplesPointColor == true
+            || session.filterEdit?.samplesDefringe == true
+            || session.filterEdit?.drawingCameraRawGeometryGuide == true
+    }
     /// View point where a targeted-adjustment drag began.
     private var hueTargetStart: CGPoint?
     private var samplingColor = false
@@ -774,8 +779,13 @@ final class CanvasView: NSView {
         // Color Burn and Color Dodge are blended by hand against the pixels under them, which needs a surface to
         // read back (see SeparableBlend).
         if !onSurface, document.layers.contains(where: { $0.adjustment != nil
-            || SeparableBlend.isCoreGraphicsWrong(session.displayedBlendMode(for: $0)) }) {
-            AdjustmentSurface.draw(in: context) { self.drawLayers(document, scale: scale, center: center, in: $0, onSurface: true) }
+            || SeparableBlend.needsSurface(session.displayedBlendMode(for: $0)) }) {
+            let visible = document.effectiveVisibleIDs
+            let padding = document.layers.filter { visible.contains($0.id) }
+                .compactMap(\.adjustment).map(\.samplingMargin).max() ?? 0
+            AdjustmentSurface.draw(in: context, padding: padding * scale) {
+                self.drawLayers(document, scale: scale, center: center, in: $0, onSurface: true)
+            }
             return
         }
         let byID = Dictionary(uniqueKeysWithValues: document.layers.map { ($0.id, $0) })
@@ -784,7 +794,7 @@ final class CanvasView: NSView {
             // A folder the layer sits in dims it along with everything else inside (see LayerOpacity).
             let opacity = layer.effectiveOpacity(in: byID)
             let mode = session.displayedBlendMode(for: layer)
-            if SeparableBlend.isCoreGraphicsWrong(mode), normalBlendLayerID != id {
+            if SeparableBlend.needsSurface(mode), normalBlendLayerID != id {
                 normalBlendLayerID = id
                 defer { normalBlendLayerID = nil }
                 if SeparableBlend.draw(mode, in: context, body: { drawOwn(id, $0) }) { return }
@@ -917,6 +927,7 @@ final class CanvasView: NSView {
         let live = LiveMaskRenderer(bounds: context.boundingBoxOfClipPath, source: { byID[$0]?.maskSourceID }, drawOwn: drawOwnWithDraft)
         live.adjustment = { byID[$0]?.adjustment }
         live.adjustmentOpacity = { byID[$0]?.effectiveOpacity(in: byID) ?? 1 }
+        live.adjustmentScale = scale
         let area = context.boundingBoxOfClipPath
         live.adjustmentClip = { [weak self] id, ctx in
             guard let self, let layer = byID[id], layer.mask?.isEnabled == true else { return }
@@ -1205,6 +1216,7 @@ final class CanvasView: NSView {
     }
     override func mouseEntered(with event: NSEvent) { mouseMoved(with: event) }
     override func mouseExited(with event: NSEvent) {
+        session.filterEdit?.cameraRawReadout = nil
         brushPointer = nil
         updateBrushCursor()
         // Tools set their cursor directly while over the canvas, so put the arrow back on the
@@ -1212,6 +1224,10 @@ final class CanvasView: NSView {
         if NSEvent.pressedMouseButtons == 0 { NSCursor.arrow.set() }
     }
     override func mouseMoved(with event: NSEvent) {
+        if session.filterEdit?.kind == .cameraRaw, let document = session.document {
+            let point = convert(event.locationInWindow, from: nil)
+            session.updateCameraRawReadout(at: session.viewport.documentPoint(from: point, documentSize: document.size))
+        }
         optionHeld = event.modifierFlags.contains(.option)
         if picking { Self.eyedropperCursor.set(); return }
         if session.tool.isSelectionTool {
@@ -1346,6 +1362,30 @@ final class CanvasView: NSView {
         window?.makeFirstResponder(self)
         guard session.document != nil, !session.isProjectBusy, !session.isImporting else { return }
         let point = convert(event.locationInWindow, from: nil)
+        if session.filterEdit?.samplesWhiteBalance == true, !spaceHeld, let document = session.document {
+            session.sampleCameraRawWhiteBalance(at: session.viewport.documentPoint(from: point, documentSize: document.size))
+            FloatingPanelController.refocus(NSUserInterfaceItemIdentifier("filterPanel"))
+            return
+        }
+        if session.filterEdit?.samplesPointColor == true, !spaceHeld, let document = session.document {
+            session.sampleCameraRawPointColor(at: session.viewport.documentPoint(from: point, documentSize: document.size))
+            FloatingPanelController.refocus(NSUserInterfaceItemIdentifier("filterPanel"))
+            return
+        }
+        if session.filterEdit?.samplesDefringe == true, !spaceHeld, let document = session.document {
+            session.sampleCameraRawDefringe(at: session.viewport.documentPoint(from: point, documentSize: document.size))
+            FloatingPanelController.refocus(NSUserInterfaceItemIdentifier("filterPanel"))
+            return
+        }
+        if session.filterEdit?.drawingCameraRawGeometryGuide == true, !spaceHeld, let document = session.document {
+            session.beginCameraRawGeometryGuide(at: session.viewport.documentPoint(from: point, documentSize: document.size))
+            return
+        }
+        if (session.filterEdit?.targetsCameraRawCurve == true || session.filterEdit?.targetsCameraRawMixer == true),
+           !spaceHeld, let document = session.document {
+            session.beginCameraRawDrag(at: session.viewport.documentPoint(from: point, documentSize: document.size))
+            return
+        }
         if session.levels?.sampleMode != nil, !spaceHeld, let document = session.document {
             session.sampleLevels(at: session.viewport.documentPoint(from: point, documentSize: document.size))
             FloatingPanelController.refocus(NSUserInterfaceItemIdentifier("levelsPanel"))
@@ -1414,6 +1454,15 @@ final class CanvasView: NSView {
     }
     override func mouseDragged(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        if session.filterEdit?.drawingCameraRawGeometryGuide == true, session.filterEdit?.cameraRawGuideDraft != nil,
+           let document = session.document {
+            session.continueCameraRawGeometryGuide(to: session.viewport.documentPoint(from: point, documentSize: document.size))
+            return
+        }
+        if session.filterEdit?.cameraRawDrag != nil, let document = session.document {
+            session.dragCameraRaw(to: session.viewport.documentPoint(from: point, documentSize: document.size))
+            return
+        }
         if textBoxAnchor != nil { dragTextGesture(to: point); return }
         if var drag = zoomDrag {
             let dx = point.x - drag.start.x
@@ -1572,6 +1621,10 @@ final class CanvasView: NSView {
         window?.invalidateCursorRects(for: self)
     }
     override func mouseUp(with event: NSEvent) {
+        if session.filterEdit?.cameraRawGuideDraft != nil {
+            session.commitCameraRawGeometryGuide()
+        }
+        session.filterEdit?.cameraRawDrag = nil
         if textBoxAnchor != nil { finishTextGesture(); return }
         stopMarqueeAutoscroll()
         if let drag = zoomDrag {

@@ -26,7 +26,8 @@ struct BlendShortcutTests {
         session.selectTool(.brush)
         #expect(window.makeFirstResponder(canvas))
         try press(forward: true)
-        #expect(mode() == .multiply)
+        // The list follows Photoshop's order, so the mode after Normal is the first darkening one.
+        #expect(mode() == .darken)
         session.selectTool(.lasso)
         #expect(window.makeFirstResponder(nil))
         try press(forward: false)
@@ -34,7 +35,7 @@ struct BlendShortcutTests {
         // Back past Normal, wrapping to the last mode. Named rather than spelled out: the list has grown before
         // (this read `.colorBurn` while that was last) and the claim is the wrap, not which mode it is. Its
         // blind spot, stated plainly: `cycleBlendMode` steps through `allCases` too, so this cannot catch the
-        // list being reordered. The step to `.multiply` above is what pins the order.
+        // list being reordered. The step to `.darken` above is what pins the order.
         #expect(mode() == LayerBlendMode.allCases.last)
         session.undo()
         #expect(mode() == .normal)

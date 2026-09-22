@@ -26,6 +26,7 @@ import CoreImage
         if let stroke = effects.stroke, stroke.isEnabled { reach = max(reach, stroke.size + 2) }
         if let shadow = effects.shadow, shadow.isEnabled { reach = max(reach, shadow.distance + shadow.blur * 3 + 2) }
         if let glow = effects.outerGlow, glow.isEnabled { reach = max(reach, glow.size * 3 + 2) }
+        if let glow = effects.innerGlow, glow.isEnabled { reach = max(reach, glow.size * 3 + 2) }
         return ceil(reach)
     }
 
@@ -100,6 +101,15 @@ import CoreImage
             fill(stroke.color, alpha: stroke.opacity, coverage: ring, in: placed(outer))
         }
         BrushRaster.draw(pixels, in: placed(outer), mask: false, context: context)
+        if let glow = effects.innerGlow, glow.isEnabled, glow.size > 0, glow.opacity > 0,
+           let coverage = try? LayerEffectsRenderer.innerGlowCoverage(
+                pixels,
+                placed: CGRect(origin: .zero, size: outer.size),
+                size: outer.size,
+                glow: glow
+           ) {
+            fill(glow.color, alpha: glow.opacity, coverage: coverage, in: placed(outer))
+        }
         if let stroke, stroke.inside, let ring = try? LayerEffectsRenderer.ringCoverage(pixels, in: outer.size, stroke: stroke) {
             fill(stroke.color, alpha: stroke.opacity, coverage: ring, in: placed(outer))
         }

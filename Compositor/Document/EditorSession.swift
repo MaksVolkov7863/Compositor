@@ -518,6 +518,31 @@ final class EditorSession {
     var conversionRequest: PSDConversionRequest?
     /// Tests assign this to skip the conversion sheet.
     @ObservationIgnored var confirmConversions: (([PSDConversion]) async -> Bool)?
+    /// The RAW file being developed, and the settings the sheet is editing (see RawImporter).
+    var rawDevelop: (url: URL, settings: RawDevelopSettings)?
+    var showsRawDevelop = false { didSet { resumeFileRequests() } }
+    @ObservationIgnored private var rawContinuation: CheckedContinuation<RawDevelopSettings?, Never>?
+    /// Tests assign this to develop without a sheet.
+    @ObservationIgnored var confirmRawDevelop: ((URL, RawDevelopSettings) async -> RawDevelopSettings?)?
+
+    /// Puts the develop sheet up and waits for the choice; nil means the import was cancelled.
+    func developRaw(_ url: URL) async -> RawDevelopSettings? {
+        let asShot = RawImporter.asShot(url) ?? RawDevelopSettings()
+        if let confirmRawDevelop { return await confirmRawDevelop(url, asShot) }
+        return await withCheckedContinuation { continuation in
+            rawContinuation = continuation
+            rawDevelop = (url, asShot)
+            showsRawDevelop = true
+        }
+    }
+    func finishRawDevelop(_ settings: RawDevelopSettings?) {
+        showsRawDevelop = false
+        rawDevelop = nil
+        Task { await RawImporter.Queue.shared.release() }
+        let continuation = rawContinuation
+        rawContinuation = nil
+        continuation?.resume(returning: settings)
+    }
     @ObservationIgnored private var conversionContinuation: CheckedContinuation<Bool, Never>?
     /// Cancel pressed while a Photoshop file was still being read.
     @ObservationIgnored private var conversionCancelled = false
@@ -725,7 +750,18 @@ final class EditorSession {
                     guard let image = layer.asset?.image else { return total }
                     return total + image.width * image.height
                 } ?? 0
-                if PSDReader.matches(url) {
+                if RawImporter.matches(url) {
+                    guard let size = RawImporter.pixelSize(url) else { throw ImageImportError.unreadable }
+                    guard size.width <= 30_000, size.height <= 30_000,
+                          size.width * size.height <= 100_000_000 - usedPixels else { throw ImageImportError.tooLarge }
+                    guard let settings = await developRaw(url) else { continue }
+                    // Seconds of work: off the main actor, or pressing Import freezes the window.
+                    guard let developed = await RawImporter.Queue.shared.develop(url, settings: settings, limit: nil)
+                    else { throw ImageImportError.unreadable }
+                    let thumbnail = try PixelAdjust.thumbnail(of: developed)
+                    insert(ImportedImage(image: developed, thumbnail: thumbnail,
+                                         name: url.deletingPathExtension().lastPathComponent), centeredAt: point)
+                } else if PSDReader.matches(url) {
                     beginPSDReading(title: "Open “\(url.lastPathComponent)”?", confirmTitle: "Import")
                     let imported: PSDImport
                     do {

@@ -9,15 +9,21 @@ nonisolated enum FilterKind: String, CaseIterable, Sendable {
     case motionBlur = "Motion Blur"
     case addNoise = "Add Noise"
     case lensCorrection = "Lens Correction"
+    case cameraRaw = "Camera Raw Filter"
     case removeBackground = "Remove Background"
     case contentAwareFill = "Content-Aware Fill"
     case curves = "Curves"
     case exposure = "Exposure"
     case gradientMap = "Gradient Map"
     case grain = "Grain"
+    case blackWhite = "Black & White"
+    case colorBalance = "Color Balance"
     var isAutomatic: Bool { self == .contentAwareFill || self == .removeBackground }
     /// Color adjustments: in the Image menu (and editable as adjustment layers), not under Filter.
-    var isImageAdjustment: Bool { self == .curves || self == .exposure || self == .gradientMap || self == .grain }
+    var isImageAdjustment: Bool {
+        self == .curves || self == .exposure || self == .gradientMap || self == .grain
+            || self == .blackWhite || self == .colorBalance
+    }
 }
 
 /// Remove Background's two ways of working: Apple's own subject mask on its own, or that mask refined against the
@@ -48,6 +54,9 @@ nonisolated struct FilterSettings: Equatable, Sendable {
     var exposure = ExposureSettings()
     var gradientMap = GradientMapSettings()
     var grain = GrainSettings()
+    var blackWhite = BlackWhiteSettings()
+    var colorBalance = ColorBalanceSettings()
+    var cameraRaw = CameraRawSettings()
     /// Remove Background: Basic is the quick subject mask; Advanced refines it (see the three settings below).
     var backgroundQuality: BackgroundQuality = .basic
     /// Remove Background: how far the mask is pulled onto the image's own edges (0 off, in layer pixels).
@@ -72,6 +81,7 @@ nonisolated struct FilterSettings: Equatable, Sendable {
         result.exposure = exposure.normalized
         result.gradientMap = gradientMap.normalized
         result.grain = grain.normalized
+        result.cameraRaw = cameraRaw.normalized
         return result
     }
 }
@@ -86,6 +96,17 @@ nonisolated struct FilterJob: @unchecked Sendable {
     let mapping: CGAffineTransform
     /// Add Noise's random pattern: the same seed gives the same grain.
     var seed: UInt32 = 0
+    /// Canvas-space origin used by live adjustment layers so partial redraws keep one noise field.
+    var noiseOrigin: CGPoint = .zero
+    /// Camera Raw's Option-drag clipping view. Preview only; committing leaves this nil.
+    var cameraRawClipping: CameraRawClipping? = nil
+    /// Persistent histogram clipping indicators. Preview only; committing leaves these off.
+    var showsShadowClipping = false
+    var showsHighlightClipping = false
+    /// Point-color range preview. −1 leaves the grade alone.
+    var visualizesPointColor = -1
+    /// Option-drag on Sharpening Masking. Preview only.
+    var showsSharpenMask = false
 }
 
 nonisolated enum PixelFilter {
@@ -130,6 +151,10 @@ nonisolated enum PixelFilter {
         case .curves: image = try settings.curves.apply(job.image)
         case .exposure: image = try settings.exposure.apply(job.image)
         case .gradientMap: image = try settings.gradientMap.apply(job.image)
+        case .blackWhite: image = try settings.blackWhite.apply(job.image)
+        case .colorBalance: image = try settings.colorBalance.apply(job.image)
+        case .cameraRaw: image = try settings.cameraRaw.apply(job.image, clipping: job.cameraRawClipping, scale: job.scale, seed: job.seed,
+                                                                visualizePointColor: job.visualizesPointColor, sharpenMask: job.showsSharpenMask)
         // Grain sits in layer pixels; the job's seed gives each application its own pattern.
         case .grain: image = try settings.grain.apply(job.image, unitsPerPixel: 1 / job.scale, seed: job.seed)
         case .removeBackground:
@@ -151,8 +176,9 @@ nonisolated enum PixelFilter {
             let context = try BrushRaster.context(width: width, height: height, mask: false)
             BrushRaster.draw(job.image, in: extent, mask: false, context: context)
             guard let data = context.data else { throw ExportError.render }
-            noise_add(data.assumingMemoryBound(to: UInt8.self), width, height, context.bytesPerRow,
-                      Float(settings.amount), settings.gaussian ? 1 : 0, settings.monochromatic ? 1 : 0, job.seed)
+            noise_add_at(data.assumingMemoryBound(to: UInt8.self), width, height, context.bytesPerRow,
+                         Float(settings.amount), settings.gaussian ? 1 : 0, settings.monochromatic ? 1 : 0, job.seed,
+                         Int64(job.noiseOrigin.x.rounded(.down)), Int64(job.noiseOrigin.y.rounded(.down)))
             guard let noisy = context.makeImage() else { throw ExportError.render }
             image = noisy
         case .lensCorrection:
@@ -195,6 +221,52 @@ final class FilterEdit {
     var preparing = false
     /// Add Noise's grain, fixed while the panel is open so changing Amount doesn't reshuffle it.
     let seed = UInt32.random(in: .min ... .max)
+    /// Camera Raw panel eyes. Off drops that group's amounts from the preview and from OK, without clearing the sliders.
+    var showsCameraRawLight = true
+    var showsCameraRawColor = true
+    var showsCameraRawEffects = true
+    var showsCameraRawCurve = true
+    var showsCameraRawMixer = true
+    var showsCameraRawGrading = true
+    var showsCameraRawDetail = true
+    var showsCameraRawOptics = true
+    var showsCameraRawGeometry = true
+    var showsCameraRawCalibration = true
+    var cameraRawCurvePage: CameraRawCurvePage = .parametric
+    var cameraRawPointChannel: CameraRawPointChannel = .rgb
+    var cameraRawMixerPage: CameraRawMixerPage = .hsl
+    var cameraRawMixerTab: CameraRawMixerTab = .hue
+    var cameraRawMixerSwatch = 0
+    var cameraRawPointIndex = 0
+    var cameraRawGradePage: CameraRawGradePage = .threeWay
+    var targetsCameraRawCurve = false
+    var targetsCameraRawMixer = false
+    var samplesPointColor = false
+    var cameraRawDrag: CameraRawDrag?
+    var pointColorVisualizeIndex: Int {
+        let points = settings.cameraRaw.mixer.points
+        guard points.indices.contains(cameraRawPointIndex), points[cameraRawPointIndex].visualize else { return -1 }
+        return cameraRawPointIndex
+    }
+    /// White-balance eyedropper, armed from the Color section.
+    var samplesWhiteBalance = false
+    /// Defringe eyedropper, armed from Optics. Sets purple or green hue range from the clicked fringe.
+    var samplesDefringe = false
+    /// Guided Upright: drag lines on the preview.
+    var drawingCameraRawGeometryGuide = false
+    var cameraRawGuideDraft: (start: CGPoint, end: CGPoint)?
+    /// Set while Option is held on Exposure, Highlights, Shadows, Whites, or Blacks.
+    var cameraRawClipping: CameraRawClipping?
+    /// Set while Option is held on Sharpening Masking.
+    var cameraRawSharpenMask = false
+    /// Histogram clipping indicators. They paint the preview and are not baked in on OK.
+    var showsShadowClipping = false
+    var showsHighlightClipping = false
+    /// Histogram, or the vectorscope chosen from its context menu.
+    var cameraRawScopeMode: CameraRawScopeMode = .histogram
+    var cameraRawScope: CameraRawScope?
+    /// RGB of the pixel under the pointer, in the adjusted preview.
+    var cameraRawReadout: (red: Int, green: Int, blue: Int)?
     @ObservationIgnored var preparedPreview: CGImage?
     /// The settings `preparedPreview` was made with, for the automatic filters that have settings of their own.
     @ObservationIgnored var preparedSettings: FilterSettings?
@@ -289,9 +361,27 @@ final class FilterEdit {
     }
 
     func previewImage(for id: UUID) -> CGImage? { preview && id == layerID ? preparedPreview : nil }
+    /// Sliders as they will be rendered: a hidden Camera Raw group contributes nothing.
+    func renderSettings() -> FilterSettings {
+        var value = settings
+        if kind == .cameraRaw {
+            value.cameraRaw = value.cameraRaw.applying(showsLight: showsCameraRawLight, showsColor: showsCameraRawColor,
+                                                        showsEffects: showsCameraRawEffects, showsCurve: showsCameraRawCurve,
+                                                        showsMixer: showsCameraRawMixer, showsGrading: showsCameraRawGrading,
+                                                        showsDetail: showsCameraRawDetail, showsOptics: showsCameraRawOptics,
+                                                        showsGeometry: showsCameraRawGeometry, showsCalibration: showsCameraRawCalibration)
+        }
+        return value
+    }
     var previewJob: FilterJob {
-        FilterJob(kind: kind, image: previewSource, settings: settings, scale: previewScale, selection: selection,
-                  mapping: previewMapping, seed: seed)
+        var job = FilterJob(kind: kind, image: previewSource, settings: renderSettings(), scale: previewScale, selection: selection,
+                            mapping: previewMapping, seed: seed)
+        job.cameraRawClipping = cameraRawClipping
+        job.showsShadowClipping = showsShadowClipping
+        job.showsHighlightClipping = showsHighlightClipping
+        job.visualizesPointColor = pointColorVisualizeIndex
+        job.showsSharpenMask = cameraRawSharpenMask
+        return job
     }
 }
 
@@ -351,14 +441,22 @@ extension EditorSession {
         edit.preparing = true
         edit.previewError = nil
         edit.previewTask = Task { @MainActor [weak self, weak edit] in
-            let result = await Task.detached(priority: .userInitiated) {
-                do { return (Optional(try PixelFilter.run(job)), Optional<String>.none) }
-                catch { return (Optional<CGImage>.none, Optional(error.localizedDescription)) }
+            let result = await Task.detached(priority: .userInitiated) { () -> (CGImage?, CameraRawScope?, String?) in
+                do {
+                    if job.kind == .cameraRaw {
+                        let made = try CameraRawScope.preview(job)
+                        return (made.image, made.scope, nil)
+                    }
+                    return (try PixelFilter.run(job), nil, nil)
+                } catch {
+                    return (nil, nil, error.localizedDescription)
+                }
             }.value
             guard let self, let edit, self.filterEdit === edit, !Task.isCancelled else { return }
             edit.previewTask = nil
             edit.preparing = false
-            edit.previewError = result.1
+            edit.previewError = result.2
+            if let scope = result.1 { edit.cameraRawScope = scope }
             if edit.preview || edit.kind.isAutomatic { edit.preparedPreview = result.0; edit.preparedSettings = job.settings; self.brushRevision += 1 }
             self.renderFilterPreview(edit)
         }
@@ -383,20 +481,25 @@ extension EditorSession {
             guard filterEdit === edit, !edit.committing, edit.preparedPreview != nil, edit.previewError == nil else { return }
             // Remove Background masks from the full-size image, so a preview made at preview size is fine to discard.
         }
+        // A hidden Camera Raw group is absent from the layer. Remember that rendered grade, including
+        // when every remaining amount is zero, so the next open does not put the hidden sliders back.
+        let rendered = edit.renderSettings()
+        if edit.kind == .cameraRaw { filterSettings = rendered }
         // No distortion to remove: close as Cancel does, without an undo step.
         if (edit.kind == .lensCorrection && edit.settings.distortion == 0)
             || (edit.kind == .exposure && edit.settings.exposure == ExposureSettings())
-            || (edit.kind == .grain && edit.settings.grain.amount == 0) { cancelFilter(); return }
+            || (edit.kind == .grain && edit.settings.grain.amount == 0)
+            || (edit.kind == .cameraRaw && rendered.cameraRaw.isIdentity) { cancelFilter(); return }
         edit.committing = true
         edit.previewTask?.cancel()
-        filterSettings = edit.settings
+        if edit.kind != .cameraRaw { filterSettings = edit.settings }
         isProjectBusy = true
         // The preview stays up until the result is on the layer, so the canvas never flashes the original.
         defer { filterEdit = nil; isProjectBusy = false; brushRevision += 1 }
         // Remove Background masks the background out rather than erasing it, so it can be brought back at any time
         // by painting the mask, disabling it, or deleting it.
         if edit.kind == .removeBackground { await commitBackgroundMask(edit); return }
-        let job = FilterJob(kind: edit.kind, image: edit.grownImage ?? edit.original.image, settings: edit.settings, scale: 1,
+        let job = FilterJob(kind: edit.kind, image: edit.grownImage ?? edit.original.image, settings: edit.renderSettings(), scale: 1,
                             selection: edit.selection, mapping: edit.mapping, seed: edit.seed)
         let cached = edit.kind.isAutomatic && edit.preparedSettings == edit.settings ? edit.preparedPreview : nil
         do {
