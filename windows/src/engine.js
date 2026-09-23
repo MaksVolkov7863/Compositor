@@ -2149,9 +2149,51 @@ class CompositorEngine {
         const imgData = layer.ctx.getImageData(0, 0, layer.width, layer.height);
         const data = imgData.data;
         const w = layer.width, h = layer.height;
+        // Sample neighboring boundary pixels and initialize hole
+        let sumR = 0, sumG = 0, sumB = 0, borderCount = 0;
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                const isSelected = this.selection.mask ? (this.selection.mask[y * w + x] > 0) : true;
+                if (!isSelected) {
+                    let isBorder = false;
+                    for (const [dy, dx] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+                        const ny = y + dy, nx = x + dx;
+                        if (ny >= 0 && ny < h && nx >= 0 && nx < w) {
+                            if (this.selection.mask && this.selection.mask[ny * w + nx] > 0) {
+                                isBorder = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (isBorder) {
+                        const idx = (y * w + x) * 4;
+                        sumR += data[idx];
+                        sumG += data[idx + 1];
+                        sumB += data[idx + 2];
+                        borderCount++;
+                    }
+                }
+            }
+        }
 
-        // Sample neighboring boundary pixels and diffuse inward
-        for (let iter = 0; iter < 10; iter++) {
+        const avgR = borderCount > 0 ? Math.round(sumR / borderCount) : 128;
+        const avgG = borderCount > 0 ? Math.round(sumG / borderCount) : 128;
+        const avgB = borderCount > 0 ? Math.round(sumB / borderCount) : 128;
+
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                if (this.selection.mask && this.selection.mask[y * w + x] > 0) {
+                    const idx = (y * w + x) * 4;
+                    data[idx] = avgR;
+                    data[idx + 1] = avgG;
+                    data[idx + 2] = avgB;
+                    data[idx + 3] = 255;
+                }
+            }
+        }
+
+        // Diffuse inward with Laplace smoothing
+        for (let iter = 0; iter < 20; iter++) {
             for (let y = 1; y < h - 1; y++) {
                 for (let x = 1; x < w - 1; x++) {
                     const idx = (y * w + x) * 4;
