@@ -43,6 +43,12 @@ jobs:
         run: |
           npm run dist
 
+      - name: Create Portable Zip Archive
+        shell: pwsh
+        run: |
+          Get-ChildItem windows/dist/*.exe | ForEach-Object { Write-Host "Built executable: $($_.FullName)" }
+          Compress-Archive -Path "windows/dist/*.exe" -DestinationPath "windows/dist/Compositor-Windows-x64-v1.1.0.zip" -Force
+
       - name: Upload Windows Binaries Artifacts
         uses: actions/upload-artifact@v4
         with:
