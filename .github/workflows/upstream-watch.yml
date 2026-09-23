@@ -1,6 +1,9 @@
 name: Upstream Sync & Parity Watcher
 
 on:
+  schedule:
+    # Run every Monday at 08:00 UTC
+    - cron: '0 8 * * 1'
   push:
     paths:
       - 'Compositor/**'
@@ -17,16 +20,17 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   parity-audit:
-    name: Audit Upstream Feature Parity
+    name: Audit Upstream Feature Parity & Sync
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 50
+          fetch-depth: 100
 
       - name: Set up Node.js 20
         uses: actions/setup-node@v4
@@ -34,10 +38,41 @@ jobs:
           node-version: 20
 
       - name: Run Parity Audit & Generate Summary
+        id: audit
         run: |
-          node scripts/parity-audit.js --ci
+          AUDIT_OUTPUT=$(node scripts/parity-audit.js --ci)
+          echo "$AUDIT_OUTPUT"
+          
+          # Check if parity is under 100%
+          if echo "$AUDIT_OUTPUT" | grep -q "Overall Feature Parity:  100%"; then
+            echo "parity_status=100" >> $GITHUB_OUTPUT
+          else
+            echo "parity_status=drift" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check Original macOS Upstream Repository
+        id: upstream_check
+        run: |
+          git remote add upstream https://github.com/mdejong/Compositor.git 2>/dev/null || true
+          git fetch upstream main --quiet 2>/dev/null || git fetch upstream master --quiet 2>/dev/null || true
+          
+          UPSTREAM_REF=$(git rev-parse -q --verify upstream/main || git rev-parse -q --verify upstream/master || echo "")
+          if [ -n "$UPSTREAM_REF" ]; then
+            NEW_COMMITS=$(git log --oneline HEAD..$UPSTREAM_REF -- Compositor CompositorTests 2>/dev/null || echo "")
+            if [ -n "$NEW_COMMITS" ]; then
+              echo "has_upstream_updates=true" >> $GITHUB_OUTPUT
+              echo "new_commits<<EOF" >> $GITHUB_OUTPUT
+              echo "$NEW_COMMITS" >> $GITHUB_OUTPUT
+              echo "EOF" >> $GITHUB_OUTPUT
+            else
+              echo "has_upstream_updates=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "has_upstream_updates=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Detect Unsynced Upstream Changes
+        id: diff_check
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }} HEAD)
@@ -51,6 +86,11 @@ jobs:
           WIN_CHANGES=$(echo "$CHANGED_FILES" | grep -E '^windows/' || true)
 
           if [ -n "$SWIFT_CHANGES" ] && [ -z "$WIN_CHANGES" ]; then
+            echo "has_unsynced=true" >> $GITHUB_OUTPUT
+            echo "swift_changes<<EOF" >> $GITHUB_OUTPUT
+            echo "$SWIFT_CHANGES" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+            
             echo "### ⚠️ Upstream macOS Updates Detected" >> $GITHUB_STEP_SUMMARY
             echo "Changes were pushed to upstream Swift codebase without corresponding updates to the Windows port in \`windows/\`:" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
@@ -59,6 +99,44 @@ jobs:
             echo '```' >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "👉 **Action Required**: Please review the above Swift changes and port relevant logic, filters, or format changes to \`windows/src/\` and \`windows/tests/\`." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "has_unsynced=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create or Update Tracking Issue on Drift
+        if: steps.audit.outputs.parity_status != '100' || steps.upstream_check.outputs.has_upstream_updates == 'true' || steps.diff_check.outputs.has_unsynced == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ISSUE_TITLE="[Upstream Sync Alert] Новые изменения в оригинальном macOS Compositor или расхождение паритета"
+          EXISTING_ISSUE=$(gh issue list --state open --search "$ISSUE_TITLE" --json number -q '.[0].number' || echo "")
+          
+          BODY_CONTENT="## ⚠️ Обнаружены новые изменения в Upstream macOS или расхождение паритета
+
+### 1. Статус паритета тестов
+\`\`\`
+$(node scripts/parity-audit.js)
+\`\`\`
+
+### 2. Новые коммиты автора в Compositor (macOS):
+\`\`\`text
+${{ steps.upstream_check.outputs.new_commits || 'Нет новых коммитов в ветке upstream' }}
+\`\`\`
+
+### 3. Изменённые Swift-файлы:
+\`\`\`text
+${{ steps.diff_check.outputs.swift_changes || 'Нет прямых изменений Swift-файлов в PR' }}
+\`\`\`
+
+---
+*Автоматически создано воркфлоу **Upstream Sync & Parity Watcher**.*"
+
+          if [ -n "$EXISTING_ISSUE" ]; then
+            echo "Обновляем существующий Issue #$EXISTING_ISSUE..."
+            gh issue comment "$EXISTING_ISSUE" --body "$BODY_CONTENT"
+          else
+            echo "Создаём новый Issue..."
+            gh issue create --title "$ISSUE_TITLE" --body "$BODY_CONTENT" --label "enhancement" || true
           fi
 
   verify-windows-tests:

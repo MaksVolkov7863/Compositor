@@ -39,17 +39,27 @@ body {
     flex-direction: column;
 }
 
-/* Custom Titlebar */
+/* Custom Titlebar with Windows 11 Mica / Acrylic Styling */
 .titlebar {
     height: 36px;
-    background-color: var(--bg-darker);
-    border-bottom: 1px solid var(--border-color);
+    background-color: rgba(26, 26, 26, 0.78);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 0 10px;
     -webkit-app-region: drag;
     z-index: 1000;
+}
+
+body.has-titlebar-overlay .window-controls {
+    display: none;
+}
+
+body.has-titlebar-overlay .titlebar {
+    padding-right: 140px;
 }
 
 .titlebar-left {

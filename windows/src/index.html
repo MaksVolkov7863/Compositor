@@ -1478,9 +1478,12 @@
             }
         });
 
-        // Listen to Electron IPC menu actions
-        if (window.electronAPI && window.electronAPI.onMenuAction) {
-            window.electronAPI.onMenuAction((action, data) => triggerAction(action, data));
+        // Listen to Electron IPC menu actions & configure Windows 11 titleBarOverlay
+        if (window.electronAPI) {
+            document.body.classList.add('has-titlebar-overlay');
+            if (window.electronAPI.onMenuAction) {
+                window.electronAPI.onMenuAction((action, data) => triggerAction(action, data));
+            }
         }
 
         // Initialize display

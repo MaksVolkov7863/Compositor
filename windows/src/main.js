@@ -11,13 +11,14 @@ function createWindow() {
         minWidth: 960,
         minHeight: 640,
         title: 'Compositor',
-        backgroundColor: '#181818',
+        backgroundColor: '#00000000',
+        backgroundMaterial: 'mica',
         icon: path.join(__dirname, 'assets', 'icon.png'),
-        frame: false, // Custom sleek titlebar
+        frame: false,
         titleBarStyle: 'hidden',
         titleBarOverlay: {
-            color: '#1e1e1e',
-            symbolColor: '#cccccc',
+            color: '#1a1a1a',
+            symbolColor: '#e6e6e6',
             height: 36
         },
         webPreferences: {
