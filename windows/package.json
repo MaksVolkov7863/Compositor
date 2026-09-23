@@ -1,6 +1,6 @@
 {
   "name": "compositor-windows",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Compositor for Windows - The lightweight, focused Photoshop alternative",
   "main": "src/main.js",
   "repository": {
@@ -9,6 +9,7 @@
   },
   "scripts": {
     "test": "node --test",
+    "parity": "node ../scripts/parity-audit.js",
     "start": "electron src/main.js",
     "pack": "electron-builder --dir",
     "dist": "electron-builder --win --x64 --publish never"

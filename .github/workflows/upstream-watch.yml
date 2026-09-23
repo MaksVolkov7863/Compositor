@@ -1,0 +1,82 @@
+name: Upstream Sync & Parity Watcher
+
+on:
+  push:
+    paths:
+      - 'Compositor/**'
+      - 'CompositorTests/**'
+      - 'windows/**'
+      - 'scripts/**'
+  pull_request:
+    paths:
+      - 'Compositor/**'
+      - 'CompositorTests/**'
+      - 'windows/**'
+      - 'scripts/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  parity-audit:
+    name: Audit Upstream Feature Parity
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 50
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run Parity Audit & Generate Summary
+        run: |
+          node scripts/parity-audit.js --ci
+
+      - name: Detect Unsynced Upstream Changes
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }} HEAD)
+          elif [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ] && [ -n "${{ github.event.before }}" ]; then
+            CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} 2>/dev/null || git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
+          else
+            CHANGED_FILES=""
+          fi
+
+          SWIFT_CHANGES=$(echo "$CHANGED_FILES" | grep -E '^(Compositor/|CompositorTests/)' || true)
+          WIN_CHANGES=$(echo "$CHANGED_FILES" | grep -E '^windows/' || true)
+
+          if [ -n "$SWIFT_CHANGES" ] && [ -z "$WIN_CHANGES" ]; then
+            echo "### ⚠️ Upstream macOS Updates Detected" >> $GITHUB_STEP_SUMMARY
+            echo "Changes were pushed to upstream Swift codebase without corresponding updates to the Windows port in \`windows/\`:" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo '```text' >> $GITHUB_STEP_SUMMARY
+            echo "$SWIFT_CHANGES" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "👉 **Action Required**: Please review the above Swift changes and port relevant logic, filters, or format changes to \`windows/src/\` and \`windows/tests/\`." >> $GITHUB_STEP_SUMMARY
+          fi
+
+  verify-windows-tests:
+    name: Run Windows Test Suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: windows
+        run: npm install
+
+      - name: Run Windows Test Suite
+        working-directory: windows
+        run: npm test

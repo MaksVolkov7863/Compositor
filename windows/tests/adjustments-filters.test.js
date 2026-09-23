@@ -135,4 +135,53 @@ describe('Adjustments & Filters Pipeline', () => {
         assert.equal(result[4], 255);
         assert.equal(result[6], 0);
     });
+
+    test('Motion Blur smears pixels along specified directional angle', () => {
+        const engine = CompositorEngine.createHeadless(20, 20);
+        const layer = engine.getActiveLayer();
+        layer.ctx.clearRect(0, 0, 20, 20);
+
+        // Single vertical white line in the middle at x=10
+        layer.ctx.fillStyle = '#ffffff';
+        layer.ctx.fillRect(10, 0, 1, 20);
+
+        // Horizontal motion blur (angle = 0, distance = 6)
+        engine.applyMotionBlur(0, 6);
+
+        const center = layer.ctx.getImageData(10, 10, 1, 1).data;
+        const neighbor = layer.ctx.getImageData(11, 10, 1, 1).data;
+
+        assert.ok(neighbor[3] > 0, 'Neighboring pixel should receive smeared alpha');
+        assert.ok(center[3] > 0, 'Center pixel remains lit');
+    });
+
+    test('Film Grain adds texture while preserving transparent areas', () => {
+        const engine = CompositorEngine.createHeadless(20, 20);
+        const layer = engine.getActiveLayer();
+        layer.ctx.clearRect(0, 0, 20, 20);
+
+        // Half filled with flat gray, half transparent
+        layer.ctx.fillStyle = 'rgb(128, 128, 128)';
+        layer.ctx.fillRect(0, 0, 10, 20);
+
+        engine.applyFilmGrain(50, 2.0, 50);
+
+        const opaquePixel = layer.ctx.getImageData(5, 5, 1, 1).data;
+        const clearPixel = layer.ctx.getImageData(15, 5, 1, 1).data;
+
+        assert.equal(clearPixel[3], 0, 'Transparent pixels must remain completely transparent');
+        assert.ok(opaquePixel[0] !== 128 || opaquePixel[1] !== 128, 'Opaque pixels receive grain variation');
+    });
+
+    test('addAdjustmentLayer creates non-destructive adjustment layer', () => {
+        const engine = CompositorEngine.createHeadless(50, 50);
+        const adjLayer = engine.addAdjustmentLayer('Gaussian Blur', { radius: 12 });
+
+        assert.ok(adjLayer);
+        assert.ok(adjLayer.isAdjustment);
+        assert.equal(adjLayer.adjustment.kind, 'Gaussian Blur');
+        assert.equal(adjLayer.adjustment.radius, 12);
+        assert.equal(engine.history[engine.historyIndex].name, 'Add Gaussian Blur Adjustment Layer');
+    });
 });
+

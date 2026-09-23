@@ -55,6 +55,7 @@
                         <div class="dropdown-divider"></div>
                         <div class="dropdown-item" onclick="triggerAction('canvas-size')">Canvas Size…<span class="shortcut">Ctrl+Alt+C</span></div>
                         <div class="dropdown-item" onclick="triggerAction('image-size')">Image Size…<span class="shortcut">Ctrl+Alt+I</span></div>
+                        <div class="dropdown-item" onclick="triggerAction('image-trim')">Trim…</div>
                         <div class="dropdown-divider"></div>
                         <div class="dropdown-item" onclick="triggerAction('flip-canvas-h')">Flip Canvas Horizontal</div>
                         <div class="dropdown-item" onclick="triggerAction('flip-canvas-v')">Flip Canvas Vertical</div>
@@ -72,6 +73,8 @@
                         <div class="dropdown-item" onclick="triggerAction('merge-layers')">Merge Down<span class="shortcut">Ctrl+E</span></div>
                         <div class="dropdown-item" onclick="triggerAction('flatten-image')">Flatten Image</div>
                         <div class="dropdown-divider"></div>
+                        <div class="dropdown-item" onclick="triggerAction('layer-effects')">Layer Effects…</div>
+                        <div class="dropdown-divider"></div>
                         <div class="dropdown-item" onclick="triggerAction('flip-layer-h')">Flip Layer Horizontal</div>
                         <div class="dropdown-item" onclick="triggerAction('flip-layer-v')">Flip Layer Vertical</div>
                     </div>
@@ -85,8 +88,12 @@
                 </div>
                 <div class="menu-item" data-menu="filter">Filter
                     <div class="dropdown-menu">
+                        <div class="dropdown-item" onclick="triggerAction('filter-camera-raw')">Camera Raw Filter…<span class="shortcut">Ctrl+Shift+A</span></div>
+                        <div class="dropdown-divider"></div>
                         <div class="dropdown-item" onclick="triggerAction('filter-gaussian-blur')">Gaussian Blur…</div>
+                        <div class="dropdown-item" onclick="triggerAction('filter-motion-blur')">Motion Blur…</div>
                         <div class="dropdown-item" onclick="triggerAction('filter-add-noise')">Add Noise…</div>
+                        <div class="dropdown-item" onclick="triggerAction('filter-film-grain')">Film Grain…</div>
                         <div class="dropdown-item" onclick="triggerAction('filter-exposure')">Exposure…</div>
                     </div>
                 </div>
@@ -235,6 +242,7 @@
                 </div>
 
                 <div class="layers-footer">
+                    <button class="panel-icon-btn" title="Layer Effects (Outer Glow, Inner Glow)" onclick="triggerAction('layer-effects')" style="font-weight:bold; font-style:italic;">fx</button>
                     <button class="panel-icon-btn" title="Create Clipping Mask (Ctrl+Alt+G)" onclick="triggerAction('toggle-clipping-mask')">◫</button>
                     <button class="panel-icon-btn" title="Add Layer Mask" onclick="triggerAction('add-layer-mask')">▢</button>
                     <button class="panel-icon-btn" title="Merge Down (Ctrl+E)" onclick="triggerAction('merge-layers')">▼</button>
@@ -252,12 +260,16 @@
 
             <!-- Adjustments Tab -->
             <div class="panel-body" id="tabAdjustments" style="display:none; padding:12px; gap:8px;">
+                <button class="btn btn-secondary" style="width:100%; text-align:left;" onclick="triggerAction('filter-camera-raw')">📷 Camera Raw Filter…</button>
                 <button class="btn btn-secondary" style="width:100%; text-align:left;" onclick="triggerAction('filter-levels')">📊 Levels Adjustment…</button>
                 <button class="btn btn-secondary" style="width:100%; text-align:left;" onclick="triggerAction('filter-curves')">📈 Curves Adjustment…</button>
                 <button class="btn btn-secondary" style="width:100%; text-align:left;" onclick="triggerAction('filter-huesat')">🎨 Hue / Saturation…</button>
                 <button class="btn btn-secondary" style="width:100%; text-align:left;" onclick="triggerAction('filter-invert')">🔄 Invert Colors</button>
                 <button class="btn btn-secondary" style="width:100%; text-align:left;" onclick="triggerAction('filter-gaussian-blur')">💧 Gaussian Blur…</button>
+                <button class="btn btn-secondary" style="width:100%; text-align:left;" onclick="triggerAction('filter-motion-blur')">💨 Motion Blur…</button>
                 <button class="btn btn-secondary" style="width:100%; text-align:left;" onclick="triggerAction('filter-add-noise')">✨ Add Film Grain / Noise…</button>
+                <button class="btn btn-secondary" style="width:100%; text-align:left;" onclick="triggerAction('layer-effects')">🌟 Inner & Outer Glow Effects…</button>
+                <button class="btn btn-secondary" style="width:100%; text-align:left;" onclick="triggerAction('image-trim')">✂️ Trim Image to Content…</button>
             </div>
         </div>
     </div>
@@ -411,6 +423,234 @@
         </div>
     </div>
 
+    <!-- Image Trim Dialog -->
+    <div class="modal-overlay" id="modalTrim">
+        <div class="modal-dialog" style="width:380px;">
+            <div class="modal-header">
+                <span>Trim</span>
+                <button class="modal-close-btn" onclick="closeModal('modalTrim')">×</button>
+            </div>
+            <div class="modal-content" style="display:flex; flex-direction:column; gap:12px;">
+                <div>
+                    <span class="form-label" style="font-weight:600; margin-bottom:6px; display:block;">Based On:</span>
+                    <label style="display:flex; align-items:center; gap:8px; margin-bottom:4px; font-size:12px; cursor:pointer;">
+                        <input type="radio" name="trimBasedOn" value="transparentPixels" checked onchange="toggleTrimTolerance()">
+                        Transparent Pixels
+                    </label>
+                    <label style="display:flex; align-items:center; gap:8px; margin-bottom:4px; font-size:12px; cursor:pointer;">
+                        <input type="radio" name="trimBasedOn" value="topLeftPixelColor" onchange="toggleTrimTolerance()">
+                        Top Left Pixel Color
+                    </label>
+                    <label style="display:flex; align-items:center; gap:8px; font-size:12px; cursor:pointer;">
+                        <input type="radio" name="trimBasedOn" value="bottomRightPixelColor" onchange="toggleTrimTolerance()">
+                        Bottom Right Pixel Color
+                    </label>
+                </div>
+                <div>
+                    <span class="form-label" style="font-weight:600; margin-bottom:6px; display:block;">Trim Away:</span>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; font-size:12px;">
+                        <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                            <input type="checkbox" id="trimTop" checked> Top
+                        </label>
+                        <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                            <input type="checkbox" id="trimBottom" checked> Bottom
+                        </label>
+                        <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                            <input type="checkbox" id="trimLeft" checked> Left
+                        </label>
+                        <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                            <input type="checkbox" id="trimRight" checked> Right
+                        </label>
+                    </div>
+                </div>
+                <div class="form-row" id="trimToleranceRow" style="display:none;">
+                    <span class="form-label">Tolerance:</span>
+                    <input type="range" id="trimToleranceSlider" class="option-slider" min="0" max="255" value="0" style="flex:1" oninput="document.getElementById('trimToleranceVal').value=this.value">
+                    <input type="number" id="trimToleranceVal" class="option-input" value="0" min="0" max="255" style="width:52px" onchange="document.getElementById('trimToleranceSlider').value=this.value">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modalTrim')">Cancel</button>
+                <button class="btn btn-primary" onclick="confirmTrim()">Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Motion Blur Dialog -->
+    <div class="modal-overlay" id="modalMotionBlur">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <span>Motion Blur</span>
+                <button class="modal-close-btn" onclick="closeModal('modalMotionBlur')">×</button>
+            </div>
+            <div class="modal-content">
+                <div class="form-row">
+                    <span class="form-label">Angle:</span>
+                    <input type="range" id="motionAngleSlider" class="option-slider" min="-90" max="90" value="0" style="flex:1" oninput="document.getElementById('motionAngleVal').value=this.value">
+                    <input type="number" id="motionAngleVal" class="option-input" value="0" min="-90" max="90" style="width:48px" onchange="document.getElementById('motionAngleSlider').value=this.value">
+                    <span>°</span>
+                </div>
+                <div class="form-row">
+                    <span class="form-label">Distance:</span>
+                    <input type="range" id="motionDistanceSlider" class="option-slider" min="1" max="200" value="10" style="flex:1" oninput="document.getElementById('motionDistanceVal').value=this.value">
+                    <input type="number" id="motionDistanceVal" class="option-input" value="10" min="1" max="200" style="width:48px" onchange="document.getElementById('motionDistanceSlider').value=this.value">
+                    <span>px</span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modalMotionBlur')">Cancel</button>
+                <button class="btn btn-primary" onclick="confirmMotionBlur()">Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Camera Raw Filter Dialog -->
+    <div class="modal-overlay" id="modalCameraRaw">
+        <div class="modal-dialog" style="width:460px; max-height:85vh; display:flex; flex-direction:column;">
+            <div class="modal-header">
+                <span>Camera Raw Filter</span>
+                <button class="modal-close-btn" onclick="closeModal('modalCameraRaw')">×</button>
+            </div>
+            <div class="modal-content" style="overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:8px;">
+                <div style="font-weight:600; font-size:12px; color:var(--text-muted); border-bottom:1px solid var(--border-color); padding-bottom:4px; margin-top:4px;">WHITE BALANCE</div>
+                <div class="form-row">
+                    <span class="form-label">Temperature:</span>
+                    <input type="range" id="crTemperature" class="option-slider" min="-100" max="100" value="0" style="flex:1" oninput="document.getElementById('crTempVal').value=this.value">
+                    <input type="number" id="crTempVal" class="option-input" value="0" min="-100" max="100" style="width:48px" onchange="document.getElementById('crTemperature').value=this.value">
+                </div>
+                <div class="form-row">
+                    <span class="form-label">Tint:</span>
+                    <input type="range" id="crTint" class="option-slider" min="-100" max="100" value="0" style="flex:1" oninput="document.getElementById('crTintVal').value=this.value">
+                    <input type="number" id="crTintVal" class="option-input" value="0" min="-100" max="100" style="width:48px" onchange="document.getElementById('crTint').value=this.value">
+                </div>
+
+                <div style="font-weight:600; font-size:12px; color:var(--text-muted); border-bottom:1px solid var(--border-color); padding-bottom:4px; margin-top:8px;">TONE</div>
+                <div class="form-row">
+                    <span class="form-label">Exposure:</span>
+                    <input type="range" id="crExposure" class="option-slider" min="-5" max="5" step="0.05" value="0" style="flex:1" oninput="document.getElementById('crExpVal').value=this.value">
+                    <input type="number" id="crExpVal" class="option-input" value="0" min="-5" max="5" step="0.05" style="width:48px" onchange="document.getElementById('crExposure').value=this.value">
+                </div>
+                <div class="form-row">
+                    <span class="form-label">Contrast:</span>
+                    <input type="range" id="crContrast" class="option-slider" min="-100" max="100" value="0" style="flex:1" oninput="document.getElementById('crContrastVal').value=this.value">
+                    <input type="number" id="crContrastVal" class="option-input" value="0" min="-100" max="100" style="width:48px" onchange="document.getElementById('crContrast').value=this.value">
+                </div>
+                <div class="form-row">
+                    <span class="form-label">Highlights:</span>
+                    <input type="range" id="crHighlights" class="option-slider" min="-100" max="100" value="0" style="flex:1" oninput="document.getElementById('crHighVal').value=this.value">
+                    <input type="number" id="crHighVal" class="option-input" value="0" min="-100" max="100" style="width:48px" onchange="document.getElementById('crHighlights').value=this.value">
+                </div>
+                <div class="form-row">
+                    <span class="form-label">Shadows:</span>
+                    <input type="range" id="crShadows" class="option-slider" min="-100" max="100" value="0" style="flex:1" oninput="document.getElementById('crShadowVal').value=this.value">
+                    <input type="number" id="crShadowVal" class="option-input" value="0" min="-100" max="100" style="width:48px" onchange="document.getElementById('crShadows').value=this.value">
+                </div>
+                <div class="form-row">
+                    <span class="form-label">Whites:</span>
+                    <input type="range" id="crWhites" class="option-slider" min="-100" max="100" value="0" style="flex:1" oninput="document.getElementById('crWhiteVal').value=this.value">
+                    <input type="number" id="crWhiteVal" class="option-input" value="0" min="-100" max="100" style="width:48px" onchange="document.getElementById('crWhites').value=this.value">
+                </div>
+                <div class="form-row">
+                    <span class="form-label">Blacks:</span>
+                    <input type="range" id="crBlacks" class="option-slider" min="-100" max="100" value="0" style="flex:1" oninput="document.getElementById('crBlackVal').value=this.value">
+                    <input type="number" id="crBlackVal" class="option-input" value="0" min="-100" max="100" style="width:48px" onchange="document.getElementById('crBlacks').value=this.value">
+                </div>
+
+                <div style="font-weight:600; font-size:12px; color:var(--text-muted); border-bottom:1px solid var(--border-color); padding-bottom:4px; margin-top:8px;">PRESENCE</div>
+                <div class="form-row">
+                    <span class="form-label">Texture:</span>
+                    <input type="range" id="crTexture" class="option-slider" min="-100" max="100" value="0" style="flex:1" oninput="document.getElementById('crTextureVal').value=this.value">
+                    <input type="number" id="crTextureVal" class="option-input" value="0" min="-100" max="100" style="width:48px" onchange="document.getElementById('crTexture').value=this.value">
+                </div>
+                <div class="form-row">
+                    <span class="form-label">Clarity:</span>
+                    <input type="range" id="crClarity" class="option-slider" min="-100" max="100" value="0" style="flex:1" oninput="document.getElementById('crClarityVal').value=this.value">
+                    <input type="number" id="crClarityVal" class="option-input" value="0" min="-100" max="100" style="width:48px" onchange="document.getElementById('crClarity').value=this.value">
+                </div>
+                <div class="form-row">
+                    <span class="form-label">Dehaze:</span>
+                    <input type="range" id="crDehaze" class="option-slider" min="-100" max="100" value="0" style="flex:1" oninput="document.getElementById('crDehazeVal').value=this.value">
+                    <input type="number" id="crDehazeVal" class="option-input" value="0" min="-100" max="100" style="width:48px" onchange="document.getElementById('crDehaze').value=this.value">
+                </div>
+                <div class="form-row">
+                    <span class="form-label">Vibrance:</span>
+                    <input type="range" id="crVibrance" class="option-slider" min="-100" max="100" value="0" style="flex:1" oninput="document.getElementById('crVibVal').value=this.value">
+                    <input type="number" id="crVibVal" class="option-input" value="0" min="-100" max="100" style="width:48px" onchange="document.getElementById('crVibrance').value=this.value">
+                </div>
+                <div class="form-row">
+                    <span class="form-label">Saturation:</span>
+                    <input type="range" id="crSaturation" class="option-slider" min="-100" max="100" value="0" style="flex:1" oninput="document.getElementById('crSatVal').value=this.value">
+                    <input type="number" id="crSatVal" class="option-input" value="0" min="-100" max="100" style="width:48px" onchange="document.getElementById('crSaturation').value=this.value">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modalCameraRaw')">Cancel</button>
+                <button class="btn btn-primary" onclick="confirmCameraRaw()">Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Layer Effects Dialog (Outer Glow, Inner Glow) -->
+    <div class="modal-overlay" id="modalLayerEffects">
+        <div class="modal-dialog" style="width:440px;">
+            <div class="modal-header">
+                <span>Layer Effects</span>
+                <button class="modal-close-btn" onclick="closeModal('modalLayerEffects')">×</button>
+            </div>
+            <div class="modal-content" style="display:flex; flex-direction:column; gap:16px;">
+                <!-- Outer Glow -->
+                <div style="border:1px solid var(--border-color); border-radius:4px; padding:10px;">
+                    <label style="display:flex; align-items:center; gap:8px; font-weight:600; font-size:13px; margin-bottom:8px; cursor:pointer;">
+                        <input type="checkbox" id="fxOuterGlowEnabled"> Outer Glow
+                    </label>
+                    <div class="form-row">
+                        <span class="form-label">Size:</span>
+                        <input type="range" id="fxOuterGlowSize" class="option-slider" min="1" max="100" value="20" style="flex:1" oninput="document.getElementById('fxOuterGlowSizeVal').value=this.value">
+                        <input type="number" id="fxOuterGlowSizeVal" class="option-input" value="20" min="1" max="100" style="width:48px" onchange="document.getElementById('fxOuterGlowSize').value=this.value">
+                        <span>px</span>
+                    </div>
+                    <div class="form-row">
+                        <span class="form-label">Opacity:</span>
+                        <input type="range" id="fxOuterGlowOpacity" class="option-slider" min="1" max="100" value="75" style="flex:1" oninput="document.getElementById('fxOuterGlowOpVal').value=this.value">
+                        <input type="number" id="fxOuterGlowOpVal" class="option-input" value="75" min="1" max="100" style="width:48px" onchange="document.getElementById('fxOuterGlowOpacity').value=this.value">
+                        <span>%</span>
+                    </div>
+                    <div class="form-row">
+                        <span class="form-label">Color:</span>
+                        <input type="color" id="fxOuterGlowColor" value="#ffffff" style="width:48px; height:24px; padding:0; border:none; cursor:pointer;">
+                    </div>
+                </div>
+
+                <!-- Inner Glow -->
+                <div style="border:1px solid var(--border-color); border-radius:4px; padding:10px;">
+                    <label style="display:flex; align-items:center; gap:8px; font-weight:600; font-size:13px; margin-bottom:8px; cursor:pointer;">
+                        <input type="checkbox" id="fxInnerGlowEnabled"> Inner Glow
+                    </label>
+                    <div class="form-row">
+                        <span class="form-label">Size:</span>
+                        <input type="range" id="fxInnerGlowSize" class="option-slider" min="1" max="100" value="10" style="flex:1" oninput="document.getElementById('fxInnerGlowSizeVal').value=this.value">
+                        <input type="number" id="fxInnerGlowSizeVal" class="option-input" value="10" min="1" max="100" style="width:48px" onchange="document.getElementById('fxInnerGlowSize').value=this.value">
+                        <span>px</span>
+                    </div>
+                    <div class="form-row">
+                        <span class="form-label">Opacity:</span>
+                        <input type="range" id="fxInnerGlowOpacity" class="option-slider" min="1" max="100" value="75" style="flex:1" oninput="document.getElementById('fxInnerGlowOpVal').value=this.value">
+                        <input type="number" id="fxInnerGlowOpVal" class="option-input" value="75" min="1" max="100" style="width:48px" onchange="document.getElementById('fxInnerGlowOpacity').value=this.value">
+                        <span>%</span>
+                    </div>
+                    <div class="form-row">
+                        <span class="form-label">Color:</span>
+                        <input type="color" id="fxInnerGlowColor" value="#ffffff" style="width:48px; height:24px; padding:0; border:none; cursor:pointer;">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modalLayerEffects')">Cancel</button>
+                <button class="btn btn-primary" onclick="confirmLayerEffects()">Apply</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Keyboard Shortcuts Dialog -->
     <div class="modal-overlay" id="modalShortcuts">
         <div class="modal-dialog" style="width:520px; max-height:80vh; display:flex; flex-direction:column;">
@@ -492,6 +732,7 @@
         let startPan = { x: 0, y: 0 };
 
         viewport.addEventListener('mousedown', (e) => {
+            if (e.button === 1) e.preventDefault();
             const rect = canvasContainer.getBoundingClientRect();
             const docX = (e.clientX - rect.left) / engine.viewport.zoom;
             const docY = (e.clientY - rect.top) / engine.viewport.zoom;
@@ -815,6 +1056,128 @@
             closeModal('modalNoise');
         }
 
+        function toggleTrimTolerance() {
+            const selected = document.querySelector('input[name="trimBasedOn"]:checked')?.value;
+            const tolRow = document.getElementById('trimToleranceRow');
+            if (tolRow) {
+                tolRow.style.display = (selected === 'topLeftPixelColor' || selected === 'bottomRightPixelColor') ? 'flex' : 'none';
+            }
+        }
+
+        function confirmTrim() {
+            const basedOn = document.querySelector('input[name="trimBasedOn"]:checked')?.value || 'transparentPixels';
+            const top = document.getElementById('trimTop').checked;
+            const bottom = document.getElementById('trimBottom').checked;
+            const left = document.getElementById('trimLeft').checked;
+            const right = document.getElementById('trimRight').checked;
+            const tolerance = parseInt(document.getElementById('trimToleranceVal').value) || 0;
+
+            engine.trimCanvas({ basedOn, top, bottom, left, right, tolerance });
+            closeModal('modalTrim');
+        }
+
+        function confirmMotionBlur() {
+            const angle = parseFloat(document.getElementById('motionAngleVal').value) || 0;
+            const distance = parseFloat(document.getElementById('motionDistanceVal').value) || 10;
+            engine.applyMotionBlur(angle, distance);
+            closeModal('modalMotionBlur');
+        }
+
+        function confirmCameraRaw() {
+            const settings = {
+                temperature: parseFloat(document.getElementById('crTempVal').value) || 0,
+                tint: parseFloat(document.getElementById('crTintVal').value) || 0,
+                exposure: parseFloat(document.getElementById('crExpVal').value) || 0,
+                contrast: parseFloat(document.getElementById('crContrastVal').value) || 0,
+                highlights: parseFloat(document.getElementById('crHighVal').value) || 0,
+                shadows: parseFloat(document.getElementById('crShadowVal').value) || 0,
+                whites: parseFloat(document.getElementById('crWhiteVal').value) || 0,
+                blacks: parseFloat(document.getElementById('crBlackVal').value) || 0,
+                texture: parseFloat(document.getElementById('crTextureVal').value) || 0,
+                clarity: parseFloat(document.getElementById('crClarityVal').value) || 0,
+                dehaze: parseFloat(document.getElementById('crDehazeVal').value) || 0,
+                vibrance: parseFloat(document.getElementById('crVibVal').value) || 0,
+                saturation: parseFloat(document.getElementById('crSatVal').value) || 0
+            };
+            engine.applyCameraRaw(settings);
+            closeModal('modalCameraRaw');
+        }
+
+        function hexToRgb01(hex) {
+            hex = hex.replace(/^#/, '');
+            if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+            const num = parseInt(hex, 16);
+            return {
+                r: ((num >> 16) & 255) / 255,
+                g: ((num >> 8) & 255) / 255,
+                b: (num & 255) / 255
+            };
+        }
+
+        function openLayerEffectsModal() {
+            const layer = engine.getActiveLayer();
+            if (!layer) return;
+
+            const og = layer.effects?.outerGlow || { enabled: false, size: 20, opacity: 0.75, red: 1, green: 1, blue: 1 };
+            document.getElementById('fxOuterGlowEnabled').checked = !!og.enabled;
+            document.getElementById('fxOuterGlowSize').value = og.size || 20;
+            document.getElementById('fxOuterGlowSizeVal').value = og.size || 20;
+            document.getElementById('fxOuterGlowOpacity').value = Math.round((og.opacity !== undefined ? og.opacity : 0.75) * 100);
+            document.getElementById('fxOuterGlowOpVal').value = Math.round((og.opacity !== undefined ? og.opacity : 0.75) * 100);
+
+            const ig = layer.effects?.innerGlow || { enabled: false, size: 10, opacity: 0.75, red: 1, green: 1, blue: 1 };
+            document.getElementById('fxInnerGlowEnabled').checked = !!ig.enabled;
+            document.getElementById('fxInnerGlowSize').value = ig.size || 10;
+            document.getElementById('fxInnerGlowSizeVal').value = ig.size || 10;
+            document.getElementById('fxInnerGlowOpacity').value = Math.round((ig.opacity !== undefined ? ig.opacity : 0.75) * 100);
+            document.getElementById('fxInnerGlowOpVal').value = Math.round((ig.opacity !== undefined ? ig.opacity : 0.75) * 100);
+
+            openModal('modalLayerEffects');
+        }
+
+        function confirmLayerEffects() {
+            const layer = engine.getActiveLayer();
+            if (!layer) return;
+
+            const ogEnabled = document.getElementById('fxOuterGlowEnabled').checked;
+            const ogSize = parseInt(document.getElementById('fxOuterGlowSizeVal').value) || 20;
+            const ogOp = (parseInt(document.getElementById('fxOuterGlowOpVal').value) || 75) / 100;
+            const ogColor = hexToRgb01(document.getElementById('fxOuterGlowColor').value);
+
+            if (ogEnabled) {
+                engine.setOuterGlow(layer.id, {
+                    enabled: true,
+                    size: ogSize,
+                    opacity: ogOp,
+                    red: ogColor.r,
+                    green: ogColor.g,
+                    blue: ogColor.b
+                });
+            } else {
+                engine.setOuterGlow(layer.id, null);
+            }
+
+            const igEnabled = document.getElementById('fxInnerGlowEnabled').checked;
+            const igSize = parseInt(document.getElementById('fxInnerGlowSizeVal').value) || 10;
+            const igOp = (parseInt(document.getElementById('fxInnerGlowOpVal').value) || 75) / 100;
+            const igColor = hexToRgb01(document.getElementById('fxInnerGlowColor').value);
+
+            if (igEnabled) {
+                engine.setInnerGlow(layer.id, {
+                    enabled: true,
+                    size: igSize,
+                    opacity: igOp,
+                    red: igColor.r,
+                    green: igColor.g,
+                    blue: igColor.b
+                });
+            } else {
+                engine.setInnerGlow(layer.id, null);
+            }
+
+            closeModal('modalLayerEffects');
+        }
+
         // Action Dispatcher (Menu / Shortcuts / IPC)
         function triggerAction(action, data = null) {
             document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
@@ -837,14 +1200,19 @@
                 case 'flatten-image': engine.flattenImage(); break;
                 case 'toggle-clipping-mask': engine.toggleClippingMask(); break;
                 case 'add-layer-mask': engine.addMaskToLayer(engine.getActiveLayer()); break;
+                case 'layer-effects': openLayerEffectsModal(); break;
                 case 'flip-layer-h': engine.flipLayer(true); break;
                 case 'flip-layer-v': engine.flipLayer(false); break;
+                case 'canvas-size': openModal('modalCanvasSize'); break;
+                case 'image-size': openModal('modalImageSize'); break;
+                case 'image-trim': openModal('modalTrim'); break;
                 case 'flip-canvas-h': engine.flipCanvas(true); break;
                 case 'flip-canvas-v': engine.flipCanvas(false); break;
                 case 'select-all': engine.selectAll(); break;
                 case 'deselect': engine.deselect(); break;
                 case 'invert-selection': engine.invertSelection(); break;
                 case 'content-aware-fill': engine.applyContentAwareFill(); break;
+                case 'filter-camera-raw': openModal('modalCameraRaw'); break;
                 case 'filter-levels':
                     openModal('modalLevels');
                     renderHistogram();
@@ -852,6 +1220,8 @@
                 case 'filter-huesat': openModal('modalHueSat'); break;
                 case 'filter-invert': engine.applyInvert(); break;
                 case 'filter-gaussian-blur': openModal('modalBlur'); break;
+                case 'filter-motion-blur': openModal('modalMotionBlur'); break;
+                case 'filter-film-grain': engine.applyFilmGrain(); break;
                 case 'filter-add-noise': openModal('modalNoise'); break;
                 case 'zoom-fit': engine.fitToScreen(); break;
                 case 'zoom-100': engine.zoomTo(1.0); break;
@@ -1068,7 +1438,7 @@
                     case 'n': e.preventDefault(); triggerAction('new-canvas'); break;
                     case 'o': e.preventDefault(); triggerAction('open-file'); break;
                     case 's': e.preventDefault(); triggerAction(shift ? 'save-as-project' : 'save-project'); break;
-                    case 'a': e.preventDefault(); triggerAction('select-all'); break;
+                    case 'a': e.preventDefault(); triggerAction(shift ? 'filter-camera-raw' : 'select-all'); break;
                     case 'd': e.preventDefault(); triggerAction('deselect'); break;
                     case 't': e.preventDefault(); triggerAction('free-transform'); break;
                     case 'j': e.preventDefault(); triggerAction('duplicate-layer'); break;

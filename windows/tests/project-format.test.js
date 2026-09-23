@@ -42,7 +42,8 @@ describe('Compositor Project (.comp) Format Specification', () => {
                         cornerRadius: 15
                     },
                     effects: {
-                        outerGlow: { size: 10, opacity: 0.8, color: '#ffff00' }
+                        outerGlow: { size: 10, opacity: 0.8, color: '#ffff00' },
+                        innerGlow: { size: 15, opacity: 0.75, red: 1, green: 1, blue: 1 }
                     }
                 },
                 {
@@ -103,6 +104,8 @@ describe('Compositor Project (.comp) Format Specification', () => {
         assert.equal(l0.shape.kind, 'rectangle');
         assert.equal(l0.shape.cornerRadius, 15);
         assert.ok(l0.effects.outerGlow);
+        assert.ok(l0.effects.innerGlow);
+        assert.equal(l0.effects.innerGlow.size, 15);
 
         // Validate layer 1
         const l1 = manifest.layers[1];
@@ -198,4 +201,133 @@ describe('Compositor Project (.comp) Format Specification', () => {
             }
         );
     });
+
+    test('Manifest strictly validates against manifest.schema.json specification', async () => {
+        const fs = require('fs');
+        const path = require('path');
+        const schemaPath = path.resolve(__dirname, '../src/manifest.schema.json');
+        assert.ok(fs.existsSync(schemaPath), 'manifest.schema.json must exist');
+        const schema = JSON.parse(fs.readFileSync(schemaPath, 'utf8'));
+
+        // Lightweight recursive JSON Schema validator for core constraints
+        function validateObject(obj, schemaNode, pathPrefix = 'root') {
+            const errors = [];
+            if (schemaNode.required) {
+                for (const req of schemaNode.required) {
+                    if (obj[req] === undefined) {
+                        errors.push(`${pathPrefix}: missing required property "${req}"`);
+                    }
+                }
+            }
+            if (schemaNode.properties) {
+                for (const [prop, propSchema] of Object.entries(schemaNode.properties)) {
+                    const val = obj[prop];
+                    if (val === undefined) continue;
+                    const curPath = `${pathPrefix}.${prop}`;
+
+                    // Type check
+                    if (propSchema.type) {
+                        const types = Array.isArray(propSchema.type) ? propSchema.type : [propSchema.type];
+                        const isInt = typeof val === 'number' && Number.isInteger(val);
+                        const isNum = typeof val === 'number';
+                        const matchesType = types.some(t => {
+                            if (t === 'integer') return isInt;
+                            if (t === 'number') return isNum;
+                            if (t === 'array') return Array.isArray(val);
+                            if (t === 'null') return val === null;
+                            return typeof val === t;
+                        });
+                        if (!matchesType) {
+                            errors.push(`${curPath}: expected type [${types.join(', ')}], got ${typeof val}`);
+                        }
+                    }
+                    if (propSchema.const !== undefined && val !== propSchema.const) {
+                        errors.push(`${curPath}: expected const "${propSchema.const}", got "${val}"`);
+                    }
+                    if (propSchema.minimum !== undefined && typeof val === 'number' && val < propSchema.minimum) {
+                        errors.push(`${curPath}: value ${val} is below minimum ${propSchema.minimum}`);
+                    }
+                    if (propSchema.maximum !== undefined && typeof val === 'number' && val > propSchema.maximum) {
+                        errors.push(`${curPath}: value ${val} is above maximum ${propSchema.maximum}`);
+                    }
+                    if (propSchema.enum && !propSchema.enum.includes(val)) {
+                        errors.push(`${curPath}: value "${val}" not in enum [${propSchema.enum.join(', ')}]`);
+                    }
+                    if (propSchema.type === 'object' && typeof val === 'object' && val !== null) {
+                        errors.push(...validateObject(val, propSchema, curPath));
+                    }
+                    if (propSchema.type === 'array' && Array.isArray(val) && propSchema.items) {
+                        val.forEach((item, idx) => {
+                            if (typeof item === 'object' && item !== null) {
+                                errors.push(...validateObject(item, propSchema.items, `${curPath}[${idx}]`));
+                            }
+                        });
+                    }
+                }
+            }
+            return errors;
+        }
+
+        // 1. Serialize sample project and validate against schema
+        const sampleProject = {
+            uuid: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+            width: 1280,
+            height: 720,
+            resolution: 72,
+            activeLayerId: 'layer-1',
+            guides: {
+                horizontal: [100],
+                vertical: [200]
+            },
+            layers: [
+                {
+                    id: 'layer-1',
+                    name: 'Base Layer',
+                    visible: true,
+                    opacity: 1.0,
+                    blendMode: 'Normal',
+                    x: 0,
+                    y: 0,
+                    width: 1280,
+                    height: 720,
+                    rotation: 0,
+                    flipX: false,
+                    flipY: false,
+                    effects: {
+                        innerGlow: { size: 10, opacity: 0.5, choke: 0.2, red: 1, green: 1, blue: 1 }
+                    }
+                }
+            ]
+        };
+
+        const zipBase64 = await ProjectStore.serializeProject(sampleProject, JSZip);
+        const zip = await JSZip.loadAsync(zipBase64, { base64: true });
+        const manifest = JSON.parse(await zip.file('manifest.json').async('string'));
+
+        const validationErrors = validateObject(manifest, schema);
+        assert.deepEqual(validationErrors, [], `Serialized manifest must pass schema validation: ${validationErrors.join('; ')}`);
+
+        // 2. Corrupt manifest must produce schema validation errors
+        const invalidManifest = {
+            format: 'invalid.format',
+            version: 99, // exceeds maximum 9
+            layers: [
+                {
+                    // missing required 'name'
+                    opacity: 2.5 // exceeds maximum 1.0
+                }
+            ],
+            guides: [
+                { axis: 'diagonal', position: 50 } // invalid enum
+            ]
+        };
+
+        const errors = validateObject(invalidManifest, schema);
+        assert.ok(errors.some(e => e.includes('format')), 'Must flag invalid format');
+        assert.ok(errors.some(e => e.includes('version')), 'Must flag invalid version');
+        assert.ok(errors.some(e => e.includes('missing required property "name"')), 'Must flag missing name');
+        assert.ok(errors.some(e => e.includes('maximum 1')), 'Must flag invalid opacity');
+        assert.ok(errors.some(e => e.includes('enum')), 'Must flag invalid guide axis');
+    });
 });
+

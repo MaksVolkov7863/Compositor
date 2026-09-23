@@ -90,6 +90,7 @@ function createApplicationMenu() {
                 { type: 'separator' },
                 { label: 'Canvas Size…', accelerator: 'Ctrl+Alt+C', click: () => sendAction('canvas-size') },
                 { label: 'Image Size…', accelerator: 'Ctrl+Alt+I', click: () => sendAction('image-size') },
+                { label: 'Trim…', click: () => sendAction('image-trim') },
                 { type: 'separator' },
                 { label: 'Flip Canvas Horizontal', click: () => sendAction('flip-canvas-h') },
                 { label: 'Flip Canvas Vertical', click: () => sendAction('flip-canvas-v') }
@@ -108,6 +109,8 @@ function createApplicationMenu() {
                 { label: 'Group Layers', accelerator: 'Ctrl+G', click: () => sendAction('group-layers') },
                 { label: 'Merge Layers', accelerator: 'Ctrl+E', click: () => sendAction('merge-layers') },
                 { label: 'Flatten Image', click: () => sendAction('flatten-image') },
+                { type: 'separator' },
+                { label: 'Layer Effects…', click: () => sendAction('layer-effects') },
                 { type: 'separator' },
                 { label: 'Flip Layer Horizontal', click: () => sendAction('flip-layer-h') },
                 { label: 'Flip Layer Vertical', click: () => sendAction('flip-layer-v') }
@@ -128,6 +131,8 @@ function createApplicationMenu() {
         {
             label: '&Filter',
             submenu: [
+                { label: 'Camera Raw Filter…', accelerator: 'Ctrl+Shift+A', click: () => sendAction('filter-camera-raw') },
+                { type: 'separator' },
                 { label: 'Gaussian Blur…', click: () => sendAction('filter-gaussian-blur') },
                 { label: 'Motion Blur…', click: () => sendAction('filter-motion-blur') },
                 { label: 'Add Noise…', click: () => sendAction('filter-add-noise') },

@@ -59,24 +59,27 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.0.0' }}
-          name: Compositor for Windows ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.0.0' }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.1.0' }}
+          name: Compositor for Windows ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.1.0' }}
           body: |
-            ## Compositor for Windows v1.0.0
+            ## Compositor for Windows v1.1.0
             
-            The lightweight, focused Photoshop alternative now available for Windows 10/11!
+            The lightweight, focused Photoshop alternative for Windows 10/11 — updated with recent upstream innovations!
+            
+            ### What's New in v1.1.0:
+            - **Inner Glow Layer FX**: Full choke, size, color picker, opacity, and source (edge/center) settings.
+            - **Image Auto-Trim**: Automatically crop out transparent borders or canvas edges (`Image > Trim...`).
+            - **Camera Raw Filter**: Comprehensive color temperature, tint, exposure (+/- stops), highlights, shadows, and vibrance (`Filter > Camera Raw Filter...` / `Ctrl+Shift+A`).
+            - **Motion Blur Filter**: Directional angle and distance blurring (`Filter > Blur > Motion Blur...`).
+            - **Co-scaled Film Grain**: Noise grain scale dynamically couples with canvas resolution.
+            - **Brush Smoothing & Middle-Click Pan**: Smooth stroke interpolation and seamless middle-mouse canvas panning.
+            - **Layer Groups Hierarchy**: Organize layers into nested folders with recursive visibility and cascading opacity.
+            - **DistortWarp Geometry**: Free transform quadrilateral homography and perspective mapping.
+            - **Parity Tracking & Schema Guard**: Automated CI parity checker (`npm run parity`) and JSON Schema manifest validation.
             
             ### Downloads
-            - **Compositor Setup (Installer)**: Download `Compositor Setup 1.0.0.exe` below
-            - **Compositor Portable**: Download `Compositor 1.0.0.exe` below (no installation required)
-            
-            ### Features
-            - Full Photoshop-style layer stack, blend modes, masks, and clipping masks
-            - Image adjustments (Levels, Curves, Hue/Saturation, Exposure, Invert)
-            - Filters (Gaussian Blur, Motion Blur, Noise/Grain, Content-Aware Fill)
-            - Retouching & selection tools (Brush, Eraser, Healing/Clone, Marquee, Lasso, Magic Wand, Type, Shapes, Gradients)
-            - Compatibility with native `.comp` project format and PNG/JPEG/PSD import and export
-            - Standard Photoshop keyboard shortcuts throughout
+            - **Compositor Setup (Installer)**: Download `Compositor Setup 1.1.0.exe` below
+            - **Compositor Portable**: Download `Compositor 1.1.0.exe` below (no installation required)
           files: |
             windows/dist/*.exe
             windows/dist/*.zip

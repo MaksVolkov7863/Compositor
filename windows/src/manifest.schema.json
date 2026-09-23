@@ -1,0 +1,280 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CompositorProjectManifest",
+  "description": "Schema definition for Compositor .comp project manifest.json (versions 1 through 9+)",
+  "type": "object",
+  "required": [
+    "format",
+    "version",
+    "layers"
+  ],
+  "properties": {
+    "format": {
+      "type": "string",
+      "const": "com.compositor.project"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9
+    },
+    "uuid": {
+      "type": "string"
+    },
+    "documentID": {
+      "type": "string"
+    },
+    "colorSpace": {
+      "type": "string"
+    },
+    "dimensions": {
+      "type": "object",
+      "required": [
+        "width",
+        "height"
+      ],
+      "properties": {
+        "width": {
+          "type": "number",
+          "minimum": 1
+        },
+        "height": {
+          "type": "number",
+          "minimum": 1
+        }
+      }
+    },
+    "width": {
+      "type": "number",
+      "minimum": 1
+    },
+    "height": {
+      "type": "number",
+      "minimum": 1
+    },
+    "resolution": {
+      "type": "number",
+      "minimum": 1
+    },
+    "activeLayerUUID": {
+      "type": "string"
+    },
+    "activeLayerID": {
+      "type": "string"
+    },
+    "guides": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "axis",
+          "position"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "axis": {
+            "type": "string",
+            "enum": [
+              "horizontal",
+              "vertical"
+            ]
+          },
+          "position": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "layers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "uuid": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "visible": {
+            "type": "boolean"
+          },
+          "isVisible": {
+            "type": "boolean"
+          },
+          "opacity": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "blendMode": {
+            "type": "string"
+          },
+          "isGroup": {
+            "type": "boolean"
+          },
+          "parentID": {
+            "type": "string"
+          },
+          "parentId": {
+            "type": "string"
+          },
+          "maskSourceID": {
+            "type": "string"
+          },
+          "maskSourceId": {
+            "type": "string"
+          },
+          "imageFile": {
+            "type": "string"
+          },
+          "maskFile": {
+            "type": "string"
+          },
+          "maskEnabled": {
+            "type": "boolean"
+          },
+          "transform": {
+            "type": "object",
+            "properties": {
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "width": {
+                "type": "number"
+              },
+              "height": {
+                "type": "number"
+              },
+              "rotation": {
+                "type": "number"
+              },
+              "flipX": {
+                "type": "boolean"
+              },
+              "flipY": {
+                "type": "boolean"
+              }
+            }
+          },
+          "adjustment": {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "params": {
+                "type": "object"
+              }
+            }
+          },
+          "shape": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "cornerRadius": {
+                "type": "number"
+              }
+            }
+          },
+          "text": {
+            "type": "object",
+            "required": [
+              "content"
+            ],
+            "properties": {
+              "content": {
+                "type": "string"
+              },
+              "fontName": {
+                "type": "string"
+              },
+              "fontSize": {
+                "type": "number"
+              },
+              "alignment": {
+                "type": "string"
+              },
+              "tracking": {
+                "type": "number"
+              },
+              "leading": {
+                "type": "number"
+              },
+              "boxSize": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            }
+          },
+          "effects": {
+            "type": "object",
+            "properties": {
+              "outerGlow": {
+                "type": "object",
+                "properties": {
+                  "size": {
+                    "type": "number"
+                  },
+                  "opacity": {
+                    "type": "number"
+                  },
+                  "color": {
+                    "type": "string"
+                  }
+                }
+              },
+              "innerGlow": {
+                "type": "object",
+                "properties": {
+                  "size": {
+                    "type": "number"
+                  },
+                  "opacity": {
+                    "type": "number"
+                  },
+                  "choke": {
+                    "type": "number"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "red": {
+                    "type": "number"
+                  },
+                  "green": {
+                    "type": "number"
+                  },
+                  "blue": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

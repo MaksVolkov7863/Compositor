@@ -402,7 +402,7 @@ class CompositorEngine {
         // Tools
         this.currentTool = 'move'; // move, marquee, lasso, wand, crop, eyedropper, heal, brush, eraser, gradient, blur, type, shape, hand, zoom
         this.toolSettings = {
-            brush: { size: 30, hardness: 80, opacity: 100 },
+            brush: { size: 30, hardness: 80, opacity: 100, smoothing: 0 },
             eraser: { size: 30, hardness: 80, opacity: 100 },
             cloneStamp: { size: 40, hardness: 0, opacity: 100 },
             spotHealing: { size: 24, hardness: 100, opacity: 100 },
@@ -582,12 +582,87 @@ class CompositorEngine {
         this.notifyUI();
     }
 
+    addGroup(name = 'Group') {
+        const group = this.createLayer(name, this.width, this.height);
+        group.isGroup = true;
+        group.collapsed = false;
+        const activeIdx = this.layers.findIndex(l => l.id === this.activeLayerId);
+        if (activeIdx !== -1) {
+            this.layers.splice(activeIdx + 1, 0, group);
+        } else {
+            this.layers.push(group);
+        }
+        this.activeLayerId = group.id;
+        this.recordHistory('Add Group');
+        this.render();
+        this.notifyUI();
+        return group;
+    }
+
+    toggleGroupExpansion(groupId) {
+        const group = this.layers.find(l => l.id === groupId);
+        if (group && group.isGroup) {
+            group.collapsed = !group.collapsed;
+            this.notifyUI();
+        }
+    }
+
+    placeLayer(layerId, inGroupId, atBottom = false) {
+        const layer = this.layers.find(l => l.id === layerId);
+        if (!layer) return false;
+        if (inGroupId) {
+            const group = this.layers.find(l => l.id === inGroupId);
+            if (!group || !group.isGroup) return false;
+            // Prevent placing group into itself or descendants
+            if (layer.id === inGroupId) return false;
+            let cur = group;
+            while (cur && cur.parentId) {
+                if (cur.parentId === layer.id) return false;
+                cur = this.layers.find(l => l.id === cur.parentId);
+            }
+        }
+        layer.parentId = inGroupId || null;
+        this.recordHistory('Move Layer Into Group');
+        this.render();
+        this.notifyUI();
+        return true;
+    }
+
+    moveActiveLayerOutOfGroup() {
+        const active = this.getActiveLayer();
+        if (!active || !active.parentId) return;
+        const parent = this.layers.find(l => l.id === active.parentId);
+        active.parentId = parent ? (parent.parentId || null) : null;
+        this.recordHistory('Move Layer Out of Group');
+        this.render();
+        this.notifyUI();
+    }
+
     deleteActiveLayer() {
         if (this.layers.length <= 1) return;
         const idx = this.layers.findIndex(l => l.id === this.activeLayerId);
         if (idx !== -1) {
-            this.layers.splice(idx, 1);
-            const nextIdx = Math.max(0, idx - 1);
+            const toDelete = this.layers[idx];
+            if (toDelete.isGroup) {
+                const childIds = new Set();
+                const findChildren = (pid) => {
+                    for (const l of this.layers) {
+                        if (l.parentId === pid) {
+                            childIds.add(l.id);
+                            if (l.isGroup) findChildren(l.id);
+                        }
+                    }
+                };
+                findChildren(toDelete.id);
+                this.layers = this.layers.filter(l => l.id !== toDelete.id && !childIds.has(l.id));
+            } else {
+                this.layers.splice(idx, 1);
+            }
+            if (this.layers.length === 0) {
+                const base = this.createLayer('Background', this.width, this.height);
+                this.layers.push(base);
+            }
+            const nextIdx = Math.max(0, Math.min(idx, this.layers.length - 1));
             this.activeLayerId = this.layers[nextIdx]?.id || null;
             this.recordHistory('Delete Layer');
             this.render();
@@ -706,8 +781,13 @@ class CompositorEngine {
             case 'Color Dodge': return 'color-dodge';
             case 'Color Burn': return 'color-burn';
             case 'Difference': return 'difference';
+            case 'Exclusion': return 'exclusion';
             case 'Soft Light': return 'soft-light';
             case 'Hard Light': return 'hard-light';
+            case 'Hue': return 'hue';
+            case 'Saturation': return 'saturation';
+            case 'Color': return 'color';
+            case 'Luminosity': return 'luminosity';
             default: return 'source-over';
         }
     }
@@ -718,9 +798,26 @@ class CompositorEngine {
         for (let i = 0; i < this.layers.length; i++) {
             const layer = this.layers[i];
             if (!layer.visible) continue;
+            if (layer.isGroup) continue;
+
+            // Check ancestor group visibility and cascade group opacity
+            let cur = layer;
+            let ancestorVisible = true;
+            let effectiveOpacity = layer.opacity !== undefined ? layer.opacity : 1.0;
+            while (cur && cur.parentId) {
+                const parent = this.layers.find(l => l.id === cur.parentId);
+                if (!parent) break;
+                if (!parent.visible) {
+                    ancestorVisible = false;
+                    break;
+                }
+                effectiveOpacity *= (parent.opacity !== undefined ? parent.opacity : 1.0);
+                cur = parent;
+            }
+            if (!ancestorVisible) continue;
 
             this.ctx.save();
-            this.ctx.globalAlpha = Math.max(0, Math.min(1, layer.opacity));
+            this.ctx.globalAlpha = Math.max(0, Math.min(1, effectiveOpacity));
             this.ctx.globalCompositeOperation = this.mapBlendMode(layer.blendMode);
 
             // Layer Transformations
@@ -730,6 +827,23 @@ class CompositorEngine {
             if (layer.rotation) this.ctx.rotate((layer.rotation * Math.PI) / 180);
             this.ctx.scale(layer.flipX ? -1 : 1, layer.flipY ? -1 : 1);
             this.ctx.translate(-cx, -cy);
+
+            // Layer Effects: Outer Glow
+            if (layer.effects && layer.effects.outerGlow && layer.effects.outerGlow.enabled !== false) {
+                const og = layer.effects.outerGlow;
+                if (og.size > 0 && og.opacity > 0) {
+                    this.ctx.save();
+                    const r = Math.round((og.red !== undefined ? og.red : 1) * 255);
+                    const g = Math.round((og.green !== undefined ? og.green : 1) * 255);
+                    const b = Math.round((og.blue !== undefined ? og.blue : 1) * 255);
+                    this.ctx.shadowColor = `rgba(${r}, ${g}, ${b}, ${og.opacity})`;
+                    this.ctx.shadowBlur = og.size;
+                    this.ctx.shadowOffsetX = 0;
+                    this.ctx.shadowOffsetY = 0;
+                    this.ctx.drawImage(layer.canvas, layer.x, layer.y);
+                    this.ctx.restore();
+                }
+            }
 
             if (layer.hasMask && layer.maskEnabled && layer.maskCanvas) {
                 // Render layer with mask
@@ -745,6 +859,34 @@ class CompositorEngine {
                 this.ctx.drawImage(tempCanvas, layer.x, layer.y);
             } else {
                 this.ctx.drawImage(layer.canvas, layer.x, layer.y);
+            }
+
+            // Layer Effects: Inner Glow
+            if (layer.effects && layer.effects.innerGlow && layer.effects.innerGlow.enabled !== false) {
+                const ig = layer.effects.innerGlow;
+                if (ig.size > 0 && ig.opacity > 0) {
+                    const igCanvas = this.createCanvas(layer.width, layer.height);
+                    igCanvas.width = layer.width;
+                    igCanvas.height = layer.height;
+                    const igCtx = igCanvas.getContext('2d');
+
+                    const r = Math.round((ig.red !== undefined ? ig.red : 1) * 255);
+                    const g = Math.round((ig.green !== undefined ? ig.green : 1) * 255);
+                    const b = Math.round((ig.blue !== undefined ? ig.blue : 1) * 255);
+
+                    igCtx.fillStyle = `rgba(${r}, ${g}, ${b}, ${ig.opacity})`;
+                    igCtx.fillRect(0, 0, layer.width, layer.height);
+
+                    igCtx.globalCompositeOperation = 'destination-out';
+                    igCtx.filter = `blur(${ig.size}px)`;
+                    igCtx.drawImage(layer.canvas, 0, 0);
+
+                    igCtx.filter = 'none';
+                    igCtx.globalCompositeOperation = 'destination-in';
+                    igCtx.drawImage(layer.canvas, 0, 0);
+
+                    this.ctx.drawImage(igCanvas, layer.x, layer.y);
+                }
             }
 
             this.ctx.restore();
@@ -974,8 +1116,17 @@ class CompositorEngine {
 
             case 'brush':
                 if (activeLayer) {
-                    this.drawBrushLine(this.lastPointer.x, this.lastPointer.y, docX, docY, false);
+                    const smoothing = this.toolSettings.brush?.smoothing || 0;
+                    let targetX = docX, targetY = docY;
+                    if (smoothing > 0) {
+                        const factor = 1 - Math.min(0.95, smoothing / 100);
+                        targetX = this.lastPointer.x + (docX - this.lastPointer.x) * factor;
+                        targetY = this.lastPointer.y + (docY - this.lastPointer.y) * factor;
+                    }
+                    this.drawBrushLine(this.lastPointer.x, this.lastPointer.y, targetX, targetY, false);
                     this.render();
+                    this.lastPointer = { x: targetX, y: targetY };
+                    return;
                 }
                 break;
 
@@ -1237,9 +1388,31 @@ class CompositorEngine {
         } else {
             path.rect(x, y, w, h);
         }
+        const mask = new Uint8Array(this.width * this.height);
+        const x0 = Math.max(0, Math.floor(x));
+        const y0 = Math.max(0, Math.floor(y));
+        const x1 = Math.min(this.width, Math.ceil(x + w));
+        const y1 = Math.min(this.height, Math.ceil(y + h));
+        const rx = w / 2, ry = h / 2, cx = x + rx, cy = y + ry;
+        for (let py = y0; py < y1; py++) {
+            for (let px = x0; px < x1; px++) {
+                if (isEllipse) {
+                    const dx = (px + 0.5 - cx) / rx;
+                    const dy = (py + 0.5 - cy) / ry;
+                    if (dx * dx + dy * dy <= 1.0) {
+                        mask[py * this.width + px] = 255;
+                    }
+                } else {
+                    mask[py * this.width + px] = 255;
+                }
+            }
+        }
         this.selection = {
             type: isEllipse ? 'ellipse' : 'rect',
-            bounds: { x, y, width: w, height: h }
+            bounds: { x, y, width: w, height: h },
+            mask,
+            width: this.width,
+            height: this.height
         };
         this.selectionPath = path;
     }
@@ -1576,6 +1749,396 @@ class CompositorEngine {
         layer.ctx.putImageData(imgData, 0, 0);
         this.recordHistory('Add Noise');
         this.render();
+    }
+
+    applyMotionBlur(angle = 0, distance = 10) {
+        if (distance <= 0) return;
+        const layer = this.getActiveLayer();
+        if (!layer) return;
+
+        const rad = (angle * Math.PI) / 180;
+        const dx = Math.cos(rad);
+        const dy = -Math.sin(rad);
+        const steps = Math.max(1, Math.round(distance));
+
+        const srcData = layer.ctx.getImageData(0, 0, layer.width, layer.height);
+        const dstData = layer.ctx.createImageData ? layer.ctx.createImageData(layer.width, layer.height) : { data: new Uint8ClampedArray(layer.width * layer.height * 4), width: layer.width, height: layer.height };
+        const src = srcData.data;
+        const dst = dstData.data;
+        const w = layer.width, h = layer.height;
+
+        const half = steps / 2;
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                let r = 0, g = 0, b = 0, a = 0, count = 0;
+                for (let s = -half; s <= half; s++) {
+                    const sx = Math.round(x + s * dx);
+                    const sy = Math.round(y + s * dy);
+                    if (sx >= 0 && sx < w && sy >= 0 && sy < h) {
+                        const idx = (sy * w + sx) * 4;
+                        r += src[idx];
+                        g += src[idx + 1];
+                        b += src[idx + 2];
+                        a += src[idx + 3];
+                        count++;
+                    }
+                }
+                const outIdx = (y * w + x) * 4;
+                if (count > 0) {
+                    dst[outIdx] = Math.round(r / count);
+                    dst[outIdx + 1] = Math.round(g / count);
+                    dst[outIdx + 2] = Math.round(b / count);
+                    dst[outIdx + 3] = Math.round(a / count);
+                }
+            }
+        }
+
+        layer.ctx.putImageData(dstData, 0, 0);
+        this.recordHistory(`Motion Blur (${distance}px)`);
+        this.render();
+    }
+
+    applyFilmGrain(amount = 25, size = 1.5, roughness = 50) {
+        const layer = this.getActiveLayer();
+        if (!layer) return;
+
+        const imgData = layer.ctx.getImageData(0, 0, layer.width, layer.height);
+        const data = imgData.data;
+        const w = layer.width, h = layer.height;
+
+        // Improved grain size behavior matching commit 59b5040:
+        // Co-scale detail roughness with size: fmax(0.5, size * 0.35)
+        const detailSize = Math.max(0.5, size * 0.35);
+        const strength = (amount > 100 ? 1.0 : amount / 100.0) * 0.35 * 255.0;
+        const rough = Math.max(0, Math.min(1.0, roughness / 100.0));
+
+        const lattice = (ix, iy, s) => {
+            let h = Math.imul(ix ^ Math.imul(iy, 0x85ebca6b), 0x9e3779b9) ^ s;
+            h ^= h >>> 16;
+            h = Math.imul(h, 0x85ebca6b);
+            h ^= h >>> 13;
+            return ((h & 0xffff) / 65535.0) + (((h >>> 16) & 0xffff) / 65535.0) - 1.0;
+        };
+
+        const grainField = (u, v, scale, s) => {
+            const cellX = Math.floor(u / scale), cellY = Math.floor(v / scale);
+            let tx = u / scale - cellX, ty = v / scale - cellY;
+            tx = tx * tx * (3.0 - 2.0 * tx);
+            ty = ty * ty * (3.0 - 2.0 * ty);
+            const ix = cellX, iy = cellY;
+            const n00 = lattice(ix, iy, s), n10 = lattice(ix + 1, iy, s);
+            const n01 = lattice(ix, iy + 1, s), n11 = lattice(ix + 1, iy + 1, s);
+            const top = n00 + (n10 - n00) * tx;
+            const bottom = n01 + (n11 - n01) * tx;
+            return (top + (bottom - top) * ty) * 1.6;
+        };
+
+        const seed = 0x4d5a6b7c;
+        const fineSeed = seed ^ 0xa511e9b3;
+
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                const idx = (y * w + x) * 4;
+                const a = data[idx + 3];
+                if (a === 0) continue;
+
+                const smooth = grainField(x + 0.5, y + 0.5, size, seed);
+                const fine = grainField(x + 0.5, y + 0.5, detailSize, fineSeed);
+                const noise = (smooth + (fine - smooth) * rough) * strength;
+
+                data[idx] = Math.max(0, Math.min(255, data[idx] + noise));
+                data[idx + 1] = Math.max(0, Math.min(255, data[idx + 1] + noise));
+                data[idx + 2] = Math.max(0, Math.min(255, data[idx + 2] + noise));
+            }
+        }
+
+        layer.ctx.putImageData(imgData, 0, 0);
+        this.recordHistory('Film Grain');
+        this.render();
+    }
+
+    applyCameraRaw(settings = {}) {
+        const layer = this.getActiveLayer();
+        if (!layer) return;
+
+        const temperature = Math.max(-100, Math.min(100, settings.temperature || 0));
+        const tint = Math.max(-100, Math.min(100, settings.tint || 0));
+        const exposure = Math.max(-5, Math.min(5, settings.exposure || 0));
+        const contrast = Math.max(-100, Math.min(100, settings.contrast || 0));
+        const highlights = Math.max(-100, Math.min(100, settings.highlights || 0));
+        const shadows = Math.max(-100, Math.min(100, settings.shadows || 0));
+        const whites = Math.max(-100, Math.min(100, settings.whites || 0));
+        const blacks = Math.max(-100, Math.min(100, settings.blacks || 0));
+        const vibrance = Math.max(-100, Math.min(100, settings.vibrance || 0));
+        const saturation = Math.max(-100, Math.min(100, settings.saturation || 0));
+        const texture = Math.max(-100, Math.min(100, settings.texture || 0));
+        const clarity = Math.max(-100, Math.min(100, settings.clarity || 0));
+        const dehaze = Math.max(-100, Math.min(100, settings.dehaze || 0));
+
+        // Temperature & Tint multipliers
+        const tempGain = (temperature / 100) * 0.35;
+        const tintGain = (tint / 100);
+        const rGain = 1.0 + tempGain + tintGain * 0.15;
+        const gGain = 1.0 - tintGain * 0.30;
+        const bGain = 1.0 - tempGain + tintGain * 0.15;
+
+        // Exposure multiplier: 2^stops
+        const expMult = Math.pow(2.0, exposure);
+        const contrastFactor = (100 + contrast) / 100;
+
+        const imgData = layer.ctx.getImageData(0, 0, layer.width, layer.height);
+        const data = imgData.data;
+
+        for (let i = 0; i < data.length; i += 4) {
+            if (data[i + 3] === 0) continue;
+            if (this.selection) {
+                const px = (i / 4) % layer.width;
+                const py = Math.floor((i / 4) / layer.width);
+                const docX = Math.round(layer.x + px);
+                const docY = Math.round(layer.y + py);
+                if (this.selection.mask) {
+                    if (docX < 0 || docX >= this.width || docY < 0 || docY >= this.height || this.selection.mask[docY * this.width + docX] === 0) {
+                        continue;
+                    }
+                } else if (this.selection.bounds) {
+                    const b = this.selection.bounds;
+                    if (docX < b.x || docX >= b.x + b.width || docY < b.y || docY >= b.y + b.height) {
+                        continue;
+                    }
+                }
+            }
+
+            let r = data[i];
+            let g = data[i + 1];
+            let b = data[i + 2];
+
+            // 1. White balance
+            r = Math.min(255, Math.max(0, r * rGain));
+            g = Math.min(255, Math.max(0, g * gGain));
+            b = Math.min(255, Math.max(0, b * bGain));
+
+            // 2. Exposure
+            r = Math.min(255, Math.max(0, r * expMult));
+            g = Math.min(255, Math.max(0, g * expMult));
+            b = Math.min(255, Math.max(0, b * expMult));
+
+            // 3. Tone controls (highlights, shadows, whites, blacks)
+            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+            const normLum = lum / 255;
+
+            if (shadows !== 0 && normLum < 0.5) {
+                const shadowWeight = (1.0 - normLum * 2);
+                const shift = (shadows / 100) * 35 * shadowWeight;
+                r = Math.min(255, Math.max(0, r + shift));
+                g = Math.min(255, Math.max(0, g + shift));
+                b = Math.min(255, Math.max(0, b + shift));
+            }
+
+            if (highlights !== 0 && normLum > 0.5) {
+                const highlightWeight = (normLum - 0.5) * 2;
+                const shift = (highlights / 100) * 35 * highlightWeight;
+                r = Math.min(255, Math.max(0, r + shift));
+                g = Math.min(255, Math.max(0, g + shift));
+                b = Math.min(255, Math.max(0, b + shift));
+            }
+
+            if (whites !== 0) {
+                r = Math.min(255, Math.max(0, r + (whites / 100) * 20 * normLum));
+                g = Math.min(255, Math.max(0, g + (whites / 100) * 20 * normLum));
+                b = Math.min(255, Math.max(0, b + (whites / 100) * 20 * normLum));
+            }
+            if (blacks !== 0) {
+                const blackWeight = 1.0 - normLum;
+                r = Math.min(255, Math.max(0, r + (blacks / 100) * 20 * blackWeight));
+                g = Math.min(255, Math.max(0, g + (blacks / 100) * 20 * blackWeight));
+                b = Math.min(255, Math.max(0, b + (blacks / 100) * 20 * blackWeight));
+            }
+
+            // 4. Contrast
+            if (contrast !== 0) {
+                r = Math.min(255, Math.max(0, (r - 128) * contrastFactor + 128));
+                g = Math.min(255, Math.max(0, (g - 128) * contrastFactor + 128));
+                b = Math.min(255, Math.max(0, (b - 128) * contrastFactor + 128));
+            }
+
+            // 5. Vibrance & Saturation
+            if (vibrance !== 0 || saturation !== 0) {
+                const maxC = Math.max(r, g, b);
+                const minC = Math.min(r, g, b);
+                const currentSat = maxC === 0 ? 0 : (maxC - minC) / maxC;
+                const vibWeight = 1.0 - currentSat;
+                const totalSatShift = (saturation / 100) + (vibrance / 100) * vibWeight;
+                const avg = 0.299 * r + 0.587 * g + 0.114 * b;
+                r = Math.min(255, Math.max(0, avg + (r - avg) * (1.0 + totalSatShift)));
+                g = Math.min(255, Math.max(0, avg + (g - avg) * (1.0 + totalSatShift)));
+                b = Math.min(255, Math.max(0, avg + (b - avg) * (1.0 + totalSatShift)));
+            }
+
+            // 6. Clarity & Dehaze
+            if (clarity !== 0 || dehaze !== 0) {
+                const punch = ((clarity * 0.4 + dehaze * 0.6) / 100) * 25;
+                const distFromMid = 1.0 - Math.abs(normLum - 0.5) * 2;
+                const shift = punch * distFromMid;
+                r = Math.min(255, Math.max(0, r + shift * (r > 128 ? 1 : -1)));
+                g = Math.min(255, Math.max(0, g + shift * (g > 128 ? 1 : -1)));
+                b = Math.min(255, Math.max(0, b + shift * (b > 128 ? 1 : -1)));
+            }
+
+            data[i] = Math.round(r);
+            data[i + 1] = Math.round(g);
+            data[i + 2] = Math.round(b);
+        }
+
+        layer.ctx.putImageData(imgData, 0, 0);
+        this.recordHistory('Camera Raw Filter');
+        this.render();
+    }
+
+    calculateTrimRect(options = {}) {
+        const basedOn = options.basedOn || 'transparentPixels';
+        const top = options.top !== false;
+        const bottom = options.bottom !== false;
+        const left = options.left !== false;
+        const right = options.right !== false;
+        const tolerance = typeof options.tolerance === 'number' ? options.tolerance : 0;
+
+        if (!top && !bottom && !left && !right) return null;
+        if (this.width <= 0 || this.height <= 0) return null;
+
+        // Composite visible layers into temporary canvas to sample full canvas pixels
+        const compCanvas = this.createCanvas(this.width, this.height);
+        const compCtx = compCanvas.getContext('2d');
+        for (const layer of this.layers) {
+            if (!layer.visible) continue;
+            compCtx.save();
+            compCtx.globalAlpha = Math.max(0, Math.min(1, layer.opacity));
+            compCtx.globalCompositeOperation = this.mapBlendMode(layer.blendMode);
+            compCtx.drawImage(layer.canvas, layer.x, layer.y);
+            compCtx.restore();
+        }
+
+        const imgData = compCtx.getImageData(0, 0, this.width, this.height);
+        const data = imgData.data;
+        const w = this.width, h = this.height;
+
+        if (basedOn === 'transparentPixels' || basedOn === 'transparent') {
+            let minX = w, maxX = 0, minY = h, maxY = 0;
+            let hasContent = false;
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    const idx = (y * w + x) * 4;
+                    if (data[idx + 3] > tolerance) {
+                        hasContent = true;
+                        if (x < minX) minX = x;
+                        if (x + 1 > maxX) maxX = x + 1;
+                        if (y < minY) minY = y;
+                        if (y + 1 > maxY) maxY = y + 1;
+                    }
+                }
+            }
+            if (!hasContent) return null;
+            const cropL = left ? minX : 0;
+            const cropT = top ? minY : 0;
+            const cropR = right ? maxX : w;
+            const cropB = bottom ? maxY : h;
+            if (cropR <= cropL || cropB <= cropT) return null;
+            return { x: cropL, y: cropT, width: cropR - cropL, height: cropB - cropT };
+        } else {
+            let sampleX = 0, sampleY = 0;
+            if (basedOn === 'bottomRightPixelColor' || basedOn === 'bottomRight') {
+                sampleX = w - 1;
+                sampleY = h - 1;
+            }
+            const sIdx = (sampleY * w + sampleX) * 4;
+            const tr = data[sIdx], tg = data[sIdx + 1], tb = data[sIdx + 2], ta = data[sIdx + 3];
+
+            const pixelMatches = (x, y) => {
+                const idx = (y * w + x) * 4;
+                return Math.abs(data[idx] - tr) <= tolerance &&
+                       Math.abs(data[idx + 1] - tg) <= tolerance &&
+                       Math.abs(data[idx + 2] - tb) <= tolerance &&
+                       Math.abs(data[idx + 3] - ta) <= tolerance;
+            };
+
+            let minX = w, maxX = 0, minY = h, maxY = 0;
+            let hasContent = false;
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    if (!pixelMatches(x, y)) {
+                        hasContent = true;
+                        if (x < minX) minX = x;
+                        if (x + 1 > maxX) maxX = x + 1;
+                        if (y < minY) minY = y;
+                        if (y + 1 > maxY) maxY = y + 1;
+                    }
+                }
+            }
+            if (!hasContent) return null;
+            const cropL = left ? minX : 0;
+            const cropT = top ? minY : 0;
+            const cropR = right ? maxX : w;
+            const cropB = bottom ? maxY : h;
+            if (cropR <= cropL || cropB <= cropT) return null;
+            return { x: cropL, y: cropT, width: cropR - cropL, height: cropB - cropT };
+        }
+    }
+
+    trimCanvas(options = {}) {
+        const rect = this.calculateTrimRect(options);
+        if (!rect) return false;
+        if (rect.x === 0 && rect.y === 0 && rect.width === this.width && rect.height === this.height) {
+            return true;
+        }
+
+        const oldW = this.width, oldH = this.height;
+        if (this.historyIndex >= 0 && this.history[this.historyIndex]) {
+            this.history[this.historyIndex].width = oldW;
+            this.history[this.historyIndex].height = oldH;
+            this.history[this.historyIndex].layers.forEach((snapL, idx) => {
+                const liveL = this.layers[idx];
+                if (liveL && snapL) {
+                    snapL.x = liveL.x;
+                    snapL.y = liveL.y;
+                }
+            });
+        }
+
+        this.width = rect.width;
+        this.height = rect.height;
+        const dx = -rect.x;
+        const dy = -rect.y;
+
+        for (const layer of this.layers) {
+            layer.x += dx;
+            layer.y += dy;
+        }
+
+        if (this.canvas) {
+            this.canvas.width = this.width;
+            this.canvas.height = this.height;
+        }
+        if (this.overlay) {
+            this.overlay.width = this.width;
+            this.overlay.height = this.height;
+        }
+
+        this.recordHistory('Trim Canvas');
+        this.render();
+        this.notifyUI();
+        return true;
+    }
+
+    addAdjustmentLayer(kind, settings = {}) {
+        const layer = this.addLayer(`${kind} Adjustment`);
+        layer.isAdjustment = true;
+        layer.adjustment = {
+            kind,
+            ...settings
+        };
+        this.recordHistory(`Add ${kind} Adjustment Layer`);
+        this.render();
+        this.notifyUI();
+        return layer;
     }
 
     applyContentAwareFill() {
@@ -2490,6 +3053,42 @@ class CompositorEngine {
         layer.effects = layer.effects || {};
         layer.effects.outerGlow = { ...effect };
         this.recordHistory('Layer Effect: Outer Glow');
+        this.render();
+        return true;
+    }
+
+    validateInnerGlow(effect) {
+        if (!effect || typeof effect !== 'object') return false;
+        if (typeof effect.size !== 'number' || effect.size < 0 || effect.size > 500) return false;
+        if (typeof effect.opacity !== 'number' || effect.opacity < 0 || effect.opacity > 1) return false;
+        if (effect.red !== undefined && (typeof effect.red !== 'number' || effect.red < 0 || effect.red > 1)) return false;
+        if (effect.green !== undefined && (typeof effect.green !== 'number' || effect.green < 0 || effect.green > 1)) return false;
+        if (effect.blue !== undefined && (typeof effect.blue !== 'number' || effect.blue < 0 || effect.blue > 1)) return false;
+        return true;
+    }
+
+    setInnerGlow(layerId, effect) {
+        const layer = this.layers.find(l => l.id === layerId);
+        if (!layer) return false;
+        if (effect === null) {
+            if (layer.effects) delete layer.effects.innerGlow;
+            this.recordHistory('Remove Inner Glow');
+            this.render();
+            return true;
+        }
+        if (!this.validateInnerGlow(effect)) {
+            throw new Error('Invalid Inner Glow effect parameters');
+        }
+        layer.effects = layer.effects || {};
+        layer.effects.innerGlow = {
+            enabled: effect.enabled !== false,
+            size: effect.size !== undefined ? effect.size : 10,
+            opacity: effect.opacity !== undefined ? effect.opacity : 0.75,
+            red: effect.red !== undefined ? effect.red : 1.0,
+            green: effect.green !== undefined ? effect.green : 1.0,
+            blue: effect.blue !== undefined ? effect.blue : 1.0
+        };
+        this.recordHistory('Layer Effect: Inner Glow');
         this.render();
         return true;
     }
