@@ -1,18 +1,7 @@
-name: Verify
+name: Verify (macOS Xcode)
 
 on:
-  push:
-    paths:
-      - 'Compositor/**'
-      - 'CompositorTests/**'
-      - 'CompositorUITests/**'
-      - 'Compositor.xcodeproj/**'
-  pull_request:
-    paths:
-      - 'Compositor/**'
-      - 'CompositorTests/**'
-      - 'CompositorUITests/**'
-      - 'Compositor.xcodeproj/**'
+  workflow_dispatch:
 
 concurrency:
   group: verify-${{ github.workflow }}-${{ github.ref }}

@@ -112,37 +112,41 @@ jobs:
         run: |
           ISSUE_TITLE="[Upstream Sync Alert] Новые изменения в оригинальном macOS Compositor или расхождение паритета"
           EXISTING_ISSUE=$(gh issue list --state open --search "$ISSUE_TITLE" --json number -q '.[0].number' || echo "")
-          
-          PARITY_REPORT=$(node scripts/parity-audit.js)
-          COMMITS_SECTION="${NEW_COMMITS:-Нет новых коммитов в ветке upstream}"
-          CHANGES_SECTION="${SWIFT_CHANGES:-Нет прямых изменений Swift-файлов в PR}"
 
-          BODY_CONTENT="## ⚠️ Обнаружены новые изменения в Upstream macOS или расхождение паритета
+          cat << 'EOF' > /tmp/issue_body.md
+## ⚠️ Обнаружены новые изменения в Upstream macOS или расхождение паритета
 
 ### 1. Статус паритета тестов
-\`\`\`
-$PARITY_REPORT
-\`\`\`
+```
+EOF
+          node scripts/parity-audit.js >> /tmp/issue_body.md
+          cat << 'EOF' >> /tmp/issue_body.md
+```
 
 ### 2. Новые коммиты автора в Compositor (macOS):
-\`\`\`text
-$COMMITS_SECTION
-\`\`\`
+```text
+EOF
+          echo "${NEW_COMMITS:-Нет новых коммитов в ветке upstream}" >> /tmp/issue_body.md
+          cat << 'EOF' >> /tmp/issue_body.md
+```
 
 ### 3. Изменённые Swift-файлы:
-\`\`\`text
-$CHANGES_SECTION
-\`\`\`
+```text
+EOF
+          echo "${SWIFT_CHANGES:-Нет прямых изменений Swift-файлов в PR}" >> /tmp/issue_body.md
+          cat << 'EOF' >> /tmp/issue_body.md
+```
 
 ---
-*Автоматически создано воркфлоу **Upstream Sync & Parity Watcher**.*"
+*Автоматически создано воркфлоу **Upstream Sync & Parity Watcher**.*
+EOF
 
           if [ -n "$EXISTING_ISSUE" ]; then
             echo "Обновляем существующий Issue #$EXISTING_ISSUE..."
-            gh issue comment "$EXISTING_ISSUE" --body "$BODY_CONTENT"
+            gh issue comment "$EXISTING_ISSUE" --body-file /tmp/issue_body.md
           else
             echo "Создаём новый Issue..."
-            gh issue create --title "$ISSUE_TITLE" --body "$BODY_CONTENT" --label "enhancement" || true
+            gh issue create --title "$ISSUE_TITLE" --body-file /tmp/issue_body.md --label "enhancement" || true
           fi
 
   verify-windows-tests:
