@@ -60,7 +60,7 @@ const SUITE_MAPPINGS = {
     'MaskTransformTests': { js: 'masks-clipping.test.js', status: 'synced', desc: 'Transforming mask linked or independent from layer' },
     'OuterGlowTests': { js: 'outer-glow-effects.test.js', status: 'synced', desc: 'Outer Glow spread, size, color and blend modes' },
     'PSDFixture': { js: null, status: 'helper', desc: 'Test fixtures for PSD parsing' },
-    'PSDRoundTripTests': { js: null, status: 'missing', desc: 'Native PSD binary layer round-trip parsing' },
+    'PSDRoundTripTests': { js: 'psd-roundtrip.test.js', status: 'synced', desc: 'Native PSD binary layer round-trip parsing' },
     'PSDVectorFixtures': { js: null, status: 'helper', desc: 'Vector shape PSD fixtures' },
     'ProjectTests': { js: 'project-format.test.js', status: 'synced', desc: 'Native .comp package saving and loading' },
     'ProjectWorkspaceTests': { js: 'project-format.test.js', status: 'synced', desc: 'Workspace state restoration on document reopen' },
