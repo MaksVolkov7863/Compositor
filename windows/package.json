@@ -5,7 +5,7 @@
   "main": "src/main.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/MaksVolkov7863/Compositor.git"
+    "url": "https://github.com/MaksVolkov7863/Compositor-Community-Edition-on-Windows.git"
   },
   "scripts": {
     "test": "node --test",
@@ -50,6 +50,12 @@
         },
         {
           "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
           "arch": [
             "x64"
           ]

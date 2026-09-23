@@ -107,25 +107,31 @@ jobs:
         if: steps.audit.outputs.parity_status != '100' || steps.upstream_check.outputs.has_upstream_updates == 'true' || steps.diff_check.outputs.has_unsynced == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_COMMITS: ${{ steps.upstream_check.outputs.new_commits }}
+          SWIFT_CHANGES: ${{ steps.diff_check.outputs.swift_changes }}
         run: |
           ISSUE_TITLE="[Upstream Sync Alert] Новые изменения в оригинальном macOS Compositor или расхождение паритета"
           EXISTING_ISSUE=$(gh issue list --state open --search "$ISSUE_TITLE" --json number -q '.[0].number' || echo "")
           
+          PARITY_REPORT=$(node scripts/parity-audit.js)
+          COMMITS_SECTION="${NEW_COMMITS:-Нет новых коммитов в ветке upstream}"
+          CHANGES_SECTION="${SWIFT_CHANGES:-Нет прямых изменений Swift-файлов в PR}"
+
           BODY_CONTENT="## ⚠️ Обнаружены новые изменения в Upstream macOS или расхождение паритета
 
 ### 1. Статус паритета тестов
 \`\`\`
-$(node scripts/parity-audit.js)
+$PARITY_REPORT
 \`\`\`
 
 ### 2. Новые коммиты автора в Compositor (macOS):
 \`\`\`text
-${{ steps.upstream_check.outputs.new_commits || 'Нет новых коммитов в ветке upstream' }}
+$COMMITS_SECTION
 \`\`\`
 
 ### 3. Изменённые Swift-файлы:
 \`\`\`text
-${{ steps.diff_check.outputs.swift_changes || 'Нет прямых изменений Swift-файлов в PR' }}
+$CHANGES_SECTION
 \`\`\`
 
 ---

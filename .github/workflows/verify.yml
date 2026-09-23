@@ -7,14 +7,12 @@ on:
       - 'CompositorTests/**'
       - 'CompositorUITests/**'
       - 'Compositor.xcodeproj/**'
-      - 'scripts/**'
   pull_request:
     paths:
       - 'Compositor/**'
       - 'CompositorTests/**'
       - 'CompositorUITests/**'
       - 'Compositor.xcodeproj/**'
-      - 'scripts/**'
 
 concurrency:
   group: verify-${{ github.workflow }}-${{ github.ref }}
@@ -26,16 +24,12 @@ permissions:
 jobs:
   unit:
     name: unit
-    # Push covers same-repo branches. pull_request runs only for forks, so a PR is not tested twice.
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
-    runs-on: macos-26
+    runs-on: macos-14
     timeout-minutes: 60
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Select Xcode 26.6
-        run: sudo xcode-select -s /Applications/Xcode_26.6.app
+        uses: actions/checkout@v4
 
       - name: Resolve Swift packages
         run: >
@@ -59,7 +53,7 @@ jobs:
 
       - name: Upload test results
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: unit-test-results
           path: TestResults.xcresult
@@ -69,14 +63,11 @@ jobs:
   ui:
     name: ui
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
-    runs-on: macos-26
+    runs-on: macos-14
     timeout-minutes: 60
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Select Xcode 26.6
-        run: sudo xcode-select -s /Applications/Xcode_26.6.app
+        uses: actions/checkout@v4
 
       - name: Resolve Swift packages
         run: >
@@ -100,7 +91,7 @@ jobs:
 
       - name: Upload test results
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: ui-test-results
           path: TestResults.xcresult

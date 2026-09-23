@@ -50,7 +50,7 @@ jobs:
           path: |
             windows/dist/*.exe
             windows/dist/*.zip
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30
 
       - name: Create or Update GitHub Release
